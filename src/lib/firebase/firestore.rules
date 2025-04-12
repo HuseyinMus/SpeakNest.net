@@ -1,0 +1,178 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper fonksiyonları
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    
+    function isStudent() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+    
+    function isEditor() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'editor';
+    }
+    
+    function isProUser() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'proUser';
+    }
+    
+    function isSameUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Kullanıcı koleksiyonu
+    match /users/{userId} {
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isAdmin() || 
+        isTeacher() || 
+        isProUser()
+      );
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+    
+    // Kurslar koleksiyonu
+    match /courses/{courseId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isTeacher() || 
+        isProUser()
+      );
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.instructorId == request.auth.uid) ||
+        (isProUser() && resource.data.instructorId == request.auth.uid)
+      );
+    }
+    
+    // Ödevler koleksiyonu
+    match /assignments/{assignmentId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.teacherId == request.auth.uid) ||
+        (isProUser() && resource.data.hostId == request.auth.uid) ||
+        (resource.data.studentId == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isTeacher() || 
+        isProUser()
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.teacherId == request.auth.uid) ||
+        (isProUser() && resource.data.hostId == request.auth.uid) ||
+        (resource.data.studentId == request.auth.uid && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentResponse', 'status', 'updatedAt']))
+      );
+      allow delete: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.teacherId == request.auth.uid) ||
+        (isProUser() && resource.data.hostId == request.auth.uid)
+      );
+    }
+    
+    // İçerik koleksiyonu
+    match /content/{contentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isTeacher() || 
+        isEditor() || 
+        isProUser()
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        isEditor() ||
+        (isTeacher() && resource.data.authorId == request.auth.uid) ||
+        (isProUser() && resource.data.authorId == request.auth.uid)
+      );
+      allow delete: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.authorId == request.auth.uid) ||
+        (isProUser() && resource.data.authorId == request.auth.uid) ||
+        isEditor()
+      );
+    }
+    
+    // Notlar koleksiyonu
+    match /grades/{gradeId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && resource.data.teacherId == request.auth.uid) ||
+        (isProUser() && resource.data.hostId == request.auth.uid) ||
+        (resource.data.studentId == request.auth.uid)
+      );
+      allow create, update, delete: if isAuthenticated() && (
+        isAdmin() || 
+        (isTeacher() && request.resource.data.teacherId == request.auth.uid) ||
+        (isProUser() && request.resource.data.hostId == request.auth.uid)
+      );
+    }
+    
+    // Toplantılar koleksiyonu
+    match /meetings/{meetingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isProUser()
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (isProUser() && resource.data.hostId == request.auth.uid) ||
+        (
+          // Öğrenciler sadece kayıt olma/ayrılma için güncelleme yapabilir
+          isStudent() && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants', 'updatedAt'])
+        )
+      );
+      allow delete: if isAuthenticated() && (
+        isAdmin() || 
+        (isProUser() && resource.data.hostId == request.auth.uid)
+      );
+    }
+    
+    // Değerlendirmeler koleksiyonu 
+    match /evaluations/{evaluationId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        (isProUser() && resource.data.hostId == request.auth.uid) ||
+        (resource.data.studentId == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
+        isProUser() ||
+        isStudent()
+      );
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (isProUser() && (resource.data.hostId == request.auth.uid)) ||
+        (isStudent() && (resource.data.studentId == request.auth.uid) && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentFeedback', 'rating', 'updatedAt']))
+      );
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+  }
+} 
