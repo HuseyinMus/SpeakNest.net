@@ -5,9 +5,20 @@ import { auth, db } from '@/lib/firebase/config';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import Image from 'next/image';
-import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut } from 'lucide-react';
+import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut, BookOpen } from 'lucide-react';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
+
+// Kelime Grubu tipi tanımlaması
+interface WordGroup {
+  id: string;
+  title: string;
+  description: string;
+  level: 'beginner' | 'intermediate' | 'advanced';
+  category: 'daily' | 'business' | 'travel' | 'academic';
+  wordCount: number;
+  creator: string;
+}
 
 export default function StudentPanel() {
   const { t } = useLanguage();
@@ -19,6 +30,13 @@ export default function StudentPanel() {
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // Kelime öğrenme sayfası için state'ler
+  const [allWordGroups, setAllWordGroups] = useState<WordGroup[]>([]);
+  const [filteredWordGroups, setFilteredWordGroups] = useState<WordGroup[]>([]);
+  const [levelFilter, setLevelFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
   
   const router = useRouter();
   
@@ -45,7 +63,103 @@ export default function StudentPanel() {
     };
     
     checkAuth();
+    
+    // Örnek kelime grupları verisi
+    const mockWordGroups: WordGroup[] = [
+      {
+        id: '1',
+        title: 'Günlük Konuşma Kelimeleri',
+        description: 'Günlük hayatta en sık kullanılan temel kelimeler',
+        level: 'intermediate',
+        category: 'daily',
+        wordCount: 50,
+        creator: 'Ahmet Yılmaz'
+      },
+      {
+        id: '2',
+        title: 'İş İngilizcesi',
+        description: 'İş ortamında kullanılan profesyonel kelimeler',
+        level: 'advanced',
+        category: 'business',
+        wordCount: 75,
+        creator: 'Mehmet Kaya'
+      },
+      {
+        id: '3',
+        title: 'Seyahat Kelimeleri',
+        description: 'Seyahat ederken ihtiyaç duyulan temel kelimeler',
+        level: 'beginner',
+        category: 'travel',
+        wordCount: 30,
+        creator: 'Zeynep Demir'
+      },
+      {
+        id: '4',
+        title: 'Akademik İngilizce',
+        description: 'Akademik çalışmalarda kullanılan terimler',
+        level: 'intermediate',
+        category: 'academic',
+        wordCount: 45,
+        creator: 'Ali Yıldız'
+      },
+      {
+        id: '5',
+        title: 'Edebiyat Terimleri',
+        description: 'Edebi eserlerde sıkça kullanılan kelimeler',
+        level: 'advanced',
+        category: 'academic',
+        wordCount: 60,
+        creator: 'Elif Şahin'
+      },
+      {
+        id: '6',
+        title: 'Temel İletişim',
+        description: 'Temel iletişim için gerekli ifadeler',
+        level: 'beginner',
+        category: 'daily',
+        wordCount: 25,
+        creator: 'Burak Öztürk'
+      }
+    ];
+    
+    setAllWordGroups(mockWordGroups);
+    setFilteredWordGroups(mockWordGroups);
   }, [router]);
+  
+  // Filtreleme fonksiyonu
+  const applyFilters = (level: string, category: string, search: string) => {
+    let filtered = [...allWordGroups];
+    
+    // Seviye filtresi
+    if (level) {
+      filtered = filtered.filter(group => group.level === level);
+    }
+    
+    // Kategori filtresi
+    if (category) {
+      filtered = filtered.filter(group => group.category === category);
+    }
+    
+    // Arama filtresi
+    if (search) {
+      filtered = filtered.filter(group => 
+        group.title.toLowerCase().includes(search.toLowerCase()) || 
+        group.description.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+    
+    setFilteredWordGroups(filtered);
+    
+    // Filtreleri state'lere kaydet
+    setLevelFilter(level);
+    setCategoryFilter(category);
+    setSearchFilter(search);
+  };
+  
+  // Kelime grubuna basıldığında rota değişikliği
+  const handleWordGroupClick = (groupId: string) => {
+    router.push(`/vocabulary/${groupId}`);
+  };
   
   // Kullanıcı profilini getir
   const fetchUserProfile = async (userId: string) => {
@@ -172,6 +286,7 @@ export default function StudentPanel() {
     { id: 'practice-rooms', label: t('practiceRooms'), icon: <Users size={18} /> },
     { id: 'upcoming', label: t('upcomingPractices'), icon: <Clock size={18} /> },
     { id: 'assignments', label: t('assignments'), icon: <FileText size={18} /> },
+    { id: 'vocabulary', label: 'Kelime Öğren', icon: <BookOpen size={18} /> },
     { id: 'profile', label: t('profile'), icon: <User size={18} /> },
     { id: 'statistics', label: t('statistics'), icon: <BarChart size={18} /> },
     { id: 'settings', label: t('settings'), icon: <Settings size={18} /> },
@@ -428,24 +543,16 @@ export default function StudentPanel() {
                         <div>
                           <h3 className="text-lg font-medium text-slate-800">{assignment.title}</h3>
                           <p className="text-slate-600 text-sm mt-1">{assignment.description}</p>
-                          <span className="text-sm text-slate-500 block mt-2">
-                            Pratik Odası: {assignment.courseName || 'Belirtilmemiş'}
-                          </span>
+                          <div className="mt-2 flex items-center text-sm text-slate-500">
+                            <span>Son Teslim: {new Date(assignment.dueDate.seconds * 1000).toLocaleDateString('tr-TR')}</span>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                            new Date(assignment.dueDate.seconds * 1000) < new Date() 
-                              ? 'bg-red-100 text-red-700' 
-                              : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            Teslim: {new Date(assignment.dueDate.seconds * 1000).toLocaleDateString('tr-TR')}
-                          </span>
-                        </div>
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">Beklemede</span>
                       </div>
-                      <div className="mt-3 flex justify-end">
+                      <div className="mt-4 flex justify-end">
                         <button 
-                          className="text-sm px-3 py-1.5 rounded-md bg-slate-600 text-white hover:bg-slate-700 transition-colors"
                           onClick={() => router.push(`/assignments/${assignment.id}`)}
+                          className="px-3 py-1.5 text-sm bg-slate-700 text-white rounded hover:bg-slate-800 transition-colors"
                         >
                           Ödevi Görüntüle
                         </button>
@@ -458,6 +565,233 @@ export default function StudentPanel() {
                   <p className="text-slate-500">Bekleyen ödeviniz bulunmamaktadır.</p>
                 </div>
               )}
+            </div>
+          </div>
+        );
+      case 'vocabulary':
+        return (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-lg border border-slate-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-6 py-4">
+                <h2 className="text-lg font-semibold text-white">Kelime Öğren</h2>
+              </div>
+              
+              {/* Filtreleme Sistemi */}
+              <div className="px-6 py-4 border-b border-slate-100 bg-white">
+                <div className="flex flex-col md:flex-row md:items-center gap-4">
+                  <div className="relative flex-grow">
+                    <input 
+                      type="text" 
+                      placeholder="Kelime grubu ara..." 
+                      className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      onChange={(e) => {
+                        // Arama filtresini uygula
+                        const searchText = e.target.value.toLowerCase();
+                        const filteredGroups = allWordGroups.filter(group => 
+                          group.title.toLowerCase().includes(searchText) || 
+                          group.description.toLowerCase().includes(searchText)
+                        );
+                        setFilteredWordGroups(filteredGroups);
+                      }}
+                    />
+                    <div className="absolute left-3 top-2.5 text-slate-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <select 
+                      className="py-2 px-3 rounded-lg border border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      onChange={(e) => {
+                        // Seviye filtresini uygula
+                        const selectedLevel = e.target.value;
+                        setLevelFilter(selectedLevel);
+                        applyFilters(selectedLevel, categoryFilter, searchFilter);
+                      }}
+                    >
+                      <option value="">Tüm Seviyeler</option>
+                      <option value="beginner">Başlangıç</option>
+                      <option value="intermediate">Orta</option>
+                      <option value="advanced">İleri</option>
+                    </select>
+                    <select 
+                      className="py-2 px-3 rounded-lg border border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      onChange={(e) => {
+                        // Kategori filtresini uygula
+                        const selectedCategory = e.target.value;
+                        setCategoryFilter(selectedCategory);
+                        applyFilters(levelFilter, selectedCategory, searchFilter);
+                      }}
+                    >
+                      <option value="">Tüm Kategoriler</option>
+                      <option value="daily">Günlük Konuşma</option>
+                      <option value="business">İş İngilizcesi</option>
+                      <option value="travel">Seyahat</option>
+                      <option value="academic">Akademik</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Aktif Filtreler */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(levelFilter || categoryFilter || searchFilter) && (
+                    <div className="w-full">
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <span>Aktif Filtreler:</span>
+                        
+                        {levelFilter && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                            {levelFilter === 'beginner' ? 'Başlangıç' : 
+                              levelFilter === 'intermediate' ? 'Orta' : 
+                              levelFilter === 'advanced' ? 'İleri' : levelFilter}
+                            <button 
+                              onClick={() => {
+                                setLevelFilter('');
+                                applyFilters('', categoryFilter, searchFilter);
+                              }} 
+                              className="ml-1 text-emerald-600 hover:text-emerald-900"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </span>
+                        )}
+                        
+                        {categoryFilter && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {categoryFilter === 'daily' ? 'Günlük Konuşma' : 
+                              categoryFilter === 'business' ? 'İş İngilizcesi' : 
+                              categoryFilter === 'travel' ? 'Seyahat' : 
+                              categoryFilter === 'academic' ? 'Akademik' : categoryFilter}
+                            <button 
+                              onClick={() => {
+                                setCategoryFilter('');
+                                applyFilters(levelFilter, '', searchFilter);
+                              }} 
+                              className="ml-1 text-blue-600 hover:text-blue-900"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </span>
+                        )}
+                        
+                        {searchFilter && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            "{searchFilter}"
+                            <button 
+                              onClick={() => {
+                                setSearchFilter('');
+                                applyFilters(levelFilter, categoryFilter, '');
+                                // Arama input alanını temizle
+                                const searchInput = document.querySelector('input[placeholder="Kelime grubu ara..."]') as HTMLInputElement;
+                                if (searchInput) searchInput.value = '';
+                              }} 
+                              className="ml-1 text-purple-600 hover:text-purple-900"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </span>
+                        )}
+                        
+                        {(levelFilter || categoryFilter || searchFilter) && (
+                          <button 
+                            onClick={() => {
+                              setLevelFilter('');
+                              setCategoryFilter('');
+                              setSearchFilter('');
+                              setFilteredWordGroups(allWordGroups);
+                              // Arama input alanını temizle
+                              const searchInput = document.querySelector('input[placeholder="Kelime grubu ara..."]') as HTMLInputElement;
+                              if (searchInput) searchInput.value = '';
+                              // Select'leri sıfırla
+                              const selects = document.querySelectorAll('select') as NodeListOf<HTMLSelectElement>;
+                              selects.forEach(select => select.value = '');
+                            }}
+                            className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+                          >
+                            Tüm filtreleri temizle
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Kelime Grupları */}
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-slate-800">Kelime Grupları</h3>
+                  <span className="text-sm text-slate-500">{filteredWordGroups.length} grup bulundu</span>
+                </div>
+                
+                {filteredWordGroups.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredWordGroups.map((group, index) => (
+                      <div 
+                        key={index}
+                        className={`bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 border ${
+                          group.level === 'beginner' ? 'border-emerald-100' : 
+                          group.level === 'intermediate' ? 'border-purple-100' : 
+                          'border-red-100'
+                        } group`}
+                      >
+                        <div 
+                          className={`h-24 p-4 flex flex-col justify-between ${
+                            group.level === 'beginner' ? 'bg-gradient-to-r from-emerald-500 to-green-500' : 
+                            group.level === 'intermediate' ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : 
+                            'bg-gradient-to-r from-red-500 to-rose-600'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="px-2 py-1 bg-white/20 backdrop-blur-sm text-white text-xs font-medium rounded">
+                              {group.level === 'beginner' ? 'Başlangıç Seviyesi' : 
+                               group.level === 'intermediate' ? 'Orta Seviye' : 
+                               'İleri Seviye'}
+                            </span>
+                            <span className="text-white/80 text-sm">{group.wordCount} Kelime</span>
+                          </div>
+                          <h4 className="text-white text-xl font-bold">{group.title}</h4>
+                        </div>
+                        <div className="p-4">
+                          <p className="text-slate-600 text-sm mb-3">{group.description}</p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                group.level === 'beginner' ? 'bg-emerald-100 text-emerald-700' : 
+                                group.level === 'intermediate' ? 'bg-purple-100 text-purple-700' : 
+                                'bg-red-100 text-red-700'
+                              }`}>{group.creator.charAt(0).toUpperCase()}</div>
+                              <span className="text-slate-500 text-sm">{group.creator}</span>
+                            </div>
+                            <button className={`text-sm font-medium transition-colors ${
+                              group.level === 'beginner' ? 'text-emerald-600 group-hover:text-emerald-700' : 
+                              group.level === 'intermediate' ? 'text-purple-600 group-hover:text-purple-700' : 
+                              'text-red-600 group-hover:text-red-700'
+                            }`}>
+                              Detaylar →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 rounded-lg p-8 text-center">
+                    <div className="text-slate-400 mb-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-slate-700 mb-1">Sonuç bulunamadı</h3>
+                    <p className="text-slate-500 text-sm">Arama kriterlerinize uygun kelime grubu bulunamadı. Lütfen filtrelerinizi değiştirin.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );

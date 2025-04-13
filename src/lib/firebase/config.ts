@@ -32,5 +32,6 @@ export const isProduction = process.env.NODE_ENV === 'production';
 export const collections = {
   users: isProduction ? 'users' : 'users_dev',
   meetings: isProduction ? 'meetings' : 'meetings_dev',
+  wordGroups: isProduction ? 'wordGroups' : 'wordGroups_dev',
   // Diğer koleksiyonlar...
 }; 

@@ -48,8 +48,13 @@ export default function CreateAdminPage() {
       setEmail('');
       setPassword('');
       setDisplayName('');
-    } catch (err: any) {
-      setError('Admin oluşturulamadı: ' + (err.message || 'Bilinmeyen hata'));
+      
+      // Başarılı olduğunda dashboard'a yönlendir
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 2000);
+    } catch (err: Error | unknown) {
+      setError('Admin oluşturulamadı: ' + ((err as Error).message || 'Bilinmeyen hata'));
     } finally {
       setLoading(false);
     }
