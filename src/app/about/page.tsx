@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { auth, db } from '@/lib/firebase/config';
 import { doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import Header from '@/components/Header';
 
 export default function About() {
   const [user, setUser] = useState<any>(null);
@@ -116,34 +117,7 @@ export default function About() {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-green-800 text-white">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="text-2xl font-semibold">SpeakNest</Link>
-            <div className="space-x-4">
-              {user ? (
-                <div className="flex items-center space-x-4">
-                  <span className="text-sm">
-                    Merhaba, {userProfile?.displayName || userProfile?.firstName || user.displayName || 'Kullanıcı'}
-                  </span>
-                  {renderProfileButton()}
-                  <button
-                    onClick={handleLogout}
-                    className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-600 transition-colors"
-                  >
-                    Çıkış Yap
-                  </button>
-                </div>
-              ) : (
-                <div className="space-x-4">
-                  {renderProfileButton()}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <Header />
       
       {/* Hero Section */}
       <div className="relative bg-gradient-to-b from-green-800 to-green-600 text-white overflow-hidden">
@@ -200,9 +174,9 @@ export default function About() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3 text-center">Küresel Erişim</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3 text-center">Erişilebilir</h3>
               <p className="text-gray-600 text-center">
-                İnternet bağlantısı olan her yerden, her zaman erişilebilir çevrimiçi dersler ve eğitim materyalleri.
+                Herkesin kolayca erişebileceği, uygun fiyatlı ve kaliteli eğitim fırsatları sunuyoruz.
               </p>
             </div>
           </div>

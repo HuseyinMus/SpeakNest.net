@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { auth, db } from '@/lib/firebase/config';
 import { doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
+import Header from '@/components/Header';
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
@@ -116,33 +117,7 @@ export default function Home() {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-green-600 to-green-800 text-white">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold">SpeakNest</h1>
-            <div className="space-x-4">
-              {user ? (
-                <div className="flex items-center space-x-4">
-                  <span className="text-sm">
-                    Merhaba, {userProfile?.displayName || userProfile?.firstName || user.displayName || 'Kullanıcı'}
-                  </span>
-                  {renderProfileButton()}
-                  <button
-                    onClick={handleLogout}
-                    className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-600 transition-colors"
-                  >
-                    Çıkış Yap
-                  </button>
-                </div>
-              ) : (
-                <div className="space-x-4">
-                  {renderProfileButton()}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <Header />
       
       {/* Hero Section */}
       <div className="container mx-auto px-4 py-16 md:py-24">
@@ -204,12 +179,12 @@ export default function Home() {
                 <div className="flex items-start">
                   <div className="flex-shrink-0 bg-green-100 p-2 rounded-full text-green-600 mr-4">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                     </svg>
                   </div>
                   <div>
                     <h3 className="text-lg font-medium text-gray-800">Kişiselleştirilmiş Eğitim</h3>
-                    <p className="text-gray-600">Seviyenize ve hedeflerinize özel hazırlanan ders içerikleri</p>
+                    <p className="text-gray-600">Seviyenize ve ihtiyaçlarınıza özel ders programı</p>
                   </div>
                 </div>
               </div>
@@ -234,8 +209,8 @@ export default function Home() {
               <div className="p-6">
                 <h3 className="text-xl font-bold mb-2 text-gray-800">Başlangıç Paketi</h3>
                 <p className="text-gray-600 mb-4">Temel İngilizce konuşma becerileri, günlük konuşmalar ve pratik dersler</p>
-                <Link href="/courses?category=beginner" className="text-green-600 hover:underline font-medium">
-                  Detaylı Bilgi →
+                <Link href="/pricing" className="text-green-600 hover:underline font-medium">
+                  Fiyatlandırmayı İncele →
                 </Link>
               </div>
             </div>
@@ -247,10 +222,10 @@ export default function Home() {
                 </svg>
               </div>
               <div className="p-6">
-                <h3 className="text-xl font-bold mb-2 text-gray-800">Veri Bilimi</h3>
-                <p className="text-gray-600 mb-4">Veri analizi, makine öğrenmesi, yapay zeka ve veri görselleştirme</p>
-                <Link href="/courses?category=data-science" className="text-blue-600 hover:underline font-medium">
-                  Kurslara Göz At →
+                <h3 className="text-xl font-bold mb-2 text-gray-800">Profesyonel Paket</h3>
+                <p className="text-gray-600 mb-4">İş İngilizcesi, sunum teknikleri ve profesyonel iletişim becerileri</p>
+                <Link href="/pricing" className="text-green-600 hover:underline font-medium">
+                  Fiyatlandırmayı İncele →
                 </Link>
               </div>
             </div>
@@ -262,13 +237,22 @@ export default function Home() {
                 </svg>
               </div>
               <div className="p-6">
-                <h3 className="text-xl font-bold mb-2 text-gray-800">Tasarım</h3>
-                <p className="text-gray-600 mb-4">Web tasarımı, UI/UX tasarımı, grafik tasarım ve 3D modelleme</p>
-                <Link href="/courses?category=design" className="text-blue-600 hover:underline font-medium">
-                  Kurslara Göz At →
+                <h3 className="text-xl font-bold mb-2 text-gray-800">Premium Paket</h3>
+                <p className="text-gray-600 mb-4">Sınırsız ders, özel eğitmen ve kişiselleştirilmiş program</p>
+                <Link href="/pricing" className="text-green-600 hover:underline font-medium">
+                  Fiyatlandırmayı İncele →
                 </Link>
               </div>
             </div>
+          </div>
+          
+          <div className="text-center mt-12">
+            <Link
+              href="/pricing"
+              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+            >
+              Tüm Paketleri İncele
+            </Link>
           </div>
         </div>
       </div>
@@ -305,7 +289,7 @@ export default function Home() {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="mb-6 md:mb-0">
-              <h2 className="text-2xl font-semibold">Eğitim Platformu</h2>
+              <h2 className="text-2xl font-semibold">SpeakNest</h2>
               <p className="mt-2 text-gray-400">© 2023 Tüm Hakları Saklıdır</p>
             </div>
             
