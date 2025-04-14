@@ -47,6 +47,8 @@ export default function StudentPanel() {
           if (user) {
             setUser(user);
             await fetchUserProfile(user.uid);
+            // Kelime gruplarını getir
+            await fetchWordGroups();
           } else {
             // Kullanıcı giriş yapmamışsa login sayfasına yönlendir
             router.push('/login');
@@ -63,68 +65,42 @@ export default function StudentPanel() {
     };
     
     checkAuth();
-    
-    // Örnek kelime grupları verisi
-    const mockWordGroups: WordGroup[] = [
-      {
-        id: '1',
-        title: 'Günlük Konuşma Kelimeleri',
-        description: 'Günlük hayatta en sık kullanılan temel kelimeler',
-        level: 'intermediate',
-        category: 'daily',
-        wordCount: 50,
-        creator: 'Ahmet Yılmaz'
-      },
-      {
-        id: '2',
-        title: 'İş İngilizcesi',
-        description: 'İş ortamında kullanılan profesyonel kelimeler',
-        level: 'advanced',
-        category: 'business',
-        wordCount: 75,
-        creator: 'Mehmet Kaya'
-      },
-      {
-        id: '3',
-        title: 'Seyahat Kelimeleri',
-        description: 'Seyahat ederken ihtiyaç duyulan temel kelimeler',
-        level: 'beginner',
-        category: 'travel',
-        wordCount: 30,
-        creator: 'Zeynep Demir'
-      },
-      {
-        id: '4',
-        title: 'Akademik İngilizce',
-        description: 'Akademik çalışmalarda kullanılan terimler',
-        level: 'intermediate',
-        category: 'academic',
-        wordCount: 45,
-        creator: 'Ali Yıldız'
-      },
-      {
-        id: '5',
-        title: 'Edebiyat Terimleri',
-        description: 'Edebi eserlerde sıkça kullanılan kelimeler',
-        level: 'advanced',
-        category: 'academic',
-        wordCount: 60,
-        creator: 'Elif Şahin'
-      },
-      {
-        id: '6',
-        title: 'Temel İletişim',
-        description: 'Temel iletişim için gerekli ifadeler',
-        level: 'beginner',
-        category: 'daily',
-        wordCount: 25,
-        creator: 'Burak Öztürk'
-      }
-    ];
-    
-    setAllWordGroups(mockWordGroups);
-    setFilteredWordGroups(mockWordGroups);
   }, [router]);
+  
+  // Firebase'den kelime gruplarını getir
+  const fetchWordGroups = async () => {
+    try {
+      setError('');
+      // Kelime gruplarını Firebase'den sorgula
+      const wordGroupsQuery = query(
+        collection(db, 'wordGroups'),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const querySnapshot = await getDocs(wordGroupsQuery);
+      const groups: WordGroup[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        groups.push({ 
+          id: doc.id, 
+          title: data.title || '',
+          description: data.description || '',
+          level: data.level || 'beginner',
+          category: data.category || 'daily',
+          wordCount: data.wordCount || 0,
+          creator: data.creator || 'SpeakNest'
+        });
+      });
+      
+      console.log('Kelime grupları yüklendi:', groups.length);
+      setAllWordGroups(groups);
+      setFilteredWordGroups(groups);
+    } catch (error) {
+      console.error('Kelime grupları getirilirken hata oluştu:', error);
+      setError('Kelime grupları yüklenemedi. Lütfen daha sonra tekrar deneyin.');
+    }
+  };
   
   // Filtreleme fonksiyonu
   const applyFilters = (level: string, category: string, search: string) => {
