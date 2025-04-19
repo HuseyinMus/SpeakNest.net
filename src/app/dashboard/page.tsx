@@ -7,9 +7,10 @@ import { rbacService } from '@/lib/auth/rbac';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
-import { Home, Users, Book, Settings, LogOut, BookOpen } from 'lucide-react';
-import { collection, addDoc, getDocs, deleteDoc, doc, Timestamp, query, orderBy, updateDoc } from 'firebase/firestore';
+import { Home, Users, Book, Settings, LogOut, BookOpen, PlusCircle, Image, GraduationCap } from 'lucide-react';
+import { collection, addDoc, getDocs, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, setDoc } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
+import styles from './styles.module.css';
 
 export default function Dashboard() {
   const [users, setUsers] = useState<User[]>([]);
@@ -38,6 +39,43 @@ export default function Dashboard() {
   const [addingWordGroup, setAddingWordGroup] = useState(false);
   const [editingWordGroupState, setEditingWordGroupState] = useState(false);
   
+  // Kelime Ekleme için state'ler
+  const [newWord, setNewWord] = useState({
+    english: '',
+    turkish: '',
+    example: '',
+    pronunciation: '',
+    groupId: ''
+  });
+  
+  // State tanımlamalarına ekle
+  const [imageUrl, setImageUrl] = useState('');
+  const [isLoadingImage, setIsLoadingImage] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [images, setImages] = useState<Array<{id: string, url: string}>>([]);
+  const [selectedImageUrl, setSelectedImageUrl] = useState('');
+  
+  // Rate limiting için debounce fonksiyonu
+  const useDebounce = (value: string, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value);
+      }, delay);
+
+      return () => {
+        clearTimeout(handler);
+      };
+    }, [value, delay]);
+
+    return debouncedValue;
+  };
+
+  // State tanımlamalarına ekle
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 1000); // 1 saniye bekle
+
   const router = useRouter();
   
   // Kelime Grubu için tip tanımlamaları
@@ -72,6 +110,22 @@ export default function Dashboard() {
     creator: string;
     words?: Word[];
   }
+  
+  // Unsplash API yanıt tipi
+  interface UnsplashImage {
+    id: string;
+    urls: {
+      regular: string;
+      small: string;
+      thumb: string;
+    };
+  }
+  
+  // State tanımlamalarına ekle
+  const [selectedWordGroup, setSelectedWordGroup] = useState<string | null>(null);
+  const [groupWords, setGroupWords] = useState<Array<Word & { imageUrl: string }>>([]);
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
   
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -333,6 +387,139 @@ export default function Dashboard() {
     }
   };
   
+  // useEffect ile debounce edilmiş aramayı dinle
+  useEffect(() => {
+    if (debouncedSearchTerm) {
+      fetchImageFromUnsplash(debouncedSearchTerm);
+    }
+  }, [debouncedSearchTerm]);
+  
+  // Unsplash API'den resim getirme fonksiyonunu güncelle
+  const fetchImageFromUnsplash = async (word: string) => {
+    if (!word.trim()) return;
+    
+    setIsLoadingImage(true);
+    setImageError('');
+    setImages([]);
+    
+    const ACCESS_KEY = process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY;
+    
+    try {
+      const response = await fetch(
+        `https://api.unsplash.com/search/photos?query=${encodeURIComponent(word)}&per_page=6`,
+        {
+          headers: {
+            'Authorization': `Client-ID ${ACCESS_KEY}`,
+            'Accept-Version': 'v1',
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        if (response.status === 429) { // Rate Limit Exceeded
+          setImageError('API kullanım limiti aşıldı. Lütfen biraz bekleyin ve tekrar deneyin.');
+          return;
+        }
+        console.error('API Yanıt:', response.status, response.statusText);
+        const errorData = await response.text();
+        console.error('API Hata Detayı:', errorData);
+        throw new Error(`Resim getirilemedi (${response.status}): ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        const newImages = data.results.map((img: UnsplashImage) => ({
+          id: img.id,
+          url: img.urls.regular
+        }));
+        setImages(newImages);
+        setSelectedImageUrl(newImages[0].url);
+        setImageUrl(newImages[0].url);
+        return newImages[0].url;
+      } else {
+        setImageError('Bu kelime için resim bulunamadı');
+        return '';
+      }
+    } catch (error) {
+      console.error('Resim getirme hatası:', error);
+      setImageError(error instanceof Error ? error.message : 'Resim getirilirken bir hata oluştu');
+      return '';
+    } finally {
+      setIsLoadingImage(false);
+    }
+  };
+  
+  // Resim seçme fonksiyonu
+  const handleImageSelect = (url: string) => {
+    setSelectedImageUrl(url);
+    setImageUrl(url);
+  };
+  
+  // Kelime ekleme fonksiyonunu güncelle
+  const handleAddWord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+
+    try {
+      if (!isAdmin) {
+        setError('Yalnızca admin kullanıcılar kelime ekleyebilir.');
+        return;
+      }
+
+      const selectedGroup = wordGroups.find(group => group.id === newWord.groupId);
+      if (!selectedGroup) {
+        setError('Geçerli bir kelime grubu seçilmedi.');
+        return;
+      }
+
+      // Kelimeyi Firestore'a ekle
+      const wordRef = doc(collection(db, 'wordGroups', newWord.groupId, 'words'));
+      await setDoc(wordRef, {
+        ...newWord,
+        imageUrl: imageUrl, // Resim URL'sini ekle
+        createdAt: Timestamp.now(),
+        creator: currentUser?.displayName || 'Admin'
+      });
+
+      // State'i sıfırla
+      setNewWord({
+        english: '',
+        turkish: '',
+        example: '',
+        pronunciation: '',
+        groupId: ''
+      });
+      setImageUrl('');
+      setImageError('');
+
+      setMessage('Kelime başarıyla eklendi.');
+    } catch (error) {
+      console.error('Kelime eklenirken hata oluştu:', error);
+      setError('Kelime eklenirken bir hata oluştu: ' + (error instanceof Error ? error.message : 'Bilinmeyen hata'));
+    }
+  };
+  
+  // Kelime grubuna ait kelimeleri getir
+  const fetchGroupWords = async (groupId: string) => {
+    try {
+      const wordsRef = collection(db, 'wordGroups', groupId, 'words');
+      const wordsSnapshot = await getDocs(wordsRef);
+      const words = wordsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Array<Word & { imageUrl: string }>;
+      
+      setGroupWords(words);
+      setCurrentWordIndex(0);
+      setIsFlipped(false);
+    } catch (error) {
+      console.error('Kelimeler getirilirken hata oluştu:', error);
+      setError('Kelimeler yüklenirken bir hata oluştu.');
+    }
+  };
+  
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -346,6 +533,8 @@ export default function Dashboard() {
     { id: 'dashboard', label: 'Gösterge Paneli', icon: <Home size={20} /> },
     { id: 'users', label: 'Kullanıcı İşlemleri', icon: <Users size={20} /> },
     { id: 'vocabulary', label: 'Kelime Grupları', icon: <BookOpen size={20} /> },
+    { id: 'addWord', label: 'Kelime Ekle', icon: <PlusCircle size={20} /> },
+    { id: 'learnWords', label: 'Kelime Öğren', icon: <GraduationCap size={20} /> },
     { id: 'content', label: 'İçerik Yönetimi', icon: <Book size={20} /> },
     { id: 'settings', label: 'Ayarlar', icon: <Settings size={20} /> },
   ];
@@ -852,6 +1041,315 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      case 'learnWords':
+        return (
+          <div className="space-y-6">
+            {!selectedWordGroup ? (
+              // Kelime Grubu Seçim Ekranı
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {wordGroups.map((group) => (
+                  <div
+                    key={group.id}
+                    onClick={() => {
+                      setSelectedWordGroup(group.id);
+                      fetchGroupWords(group.id);
+                    }}
+                    className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
+                  >
+                    <div className="p-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                        {group.title}
+                      </h3>
+                      <p className="text-sm text-gray-600 mb-4">
+                        {group.description}
+                      </p>
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <span className={`px-2 py-1 rounded ${
+                          group.level === 'beginner' ? 'bg-green-100 text-green-800' :
+                          group.level === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {group.level === 'beginner' ? 'Başlangıç' :
+                           group.level === 'intermediate' ? 'Orta Seviye' : 'İleri Seviye'}
+                        </span>
+                        <span>{group.wordCount} Kelime</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // Kelime Öğrenme Ekranı
+              <div className="max-w-2xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                  <button
+                    onClick={() => {
+                      setSelectedWordGroup(null);
+                      setGroupWords([]);
+                    }}
+                    className="text-blue-600 hover:text-blue-800 flex items-center"
+                  >
+                    <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Gruplara Dön
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    {currentWordIndex + 1} / {groupWords.length}
+                  </div>
+                </div>
+
+                {groupWords.length > 0 ? (
+                  <div className="relative">
+                    <div
+                      className={`${styles.cardContainer} ${isFlipped ? styles.flipped : ''}`}
+                      onClick={() => setIsFlipped(!isFlipped)}
+                    >
+                      {/* Ön Yüz */}
+                      <div className={styles.cardFace}>
+                        <div className="p-6 flex flex-col items-center">
+                          <div className="w-full aspect-video rounded-lg overflow-hidden mb-6">
+                            <img
+                              src={groupWords[currentWordIndex].imageUrl}
+                              alt={groupWords[currentWordIndex].english}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <h2 className="text-3xl font-bold text-gray-800 mb-4">
+                            {groupWords[currentWordIndex].english}
+                          </h2>
+                          {groupWords[currentWordIndex].pronunciation && (
+                            <p className="text-gray-600 italic mb-4">
+                              /{groupWords[currentWordIndex].pronunciation}/
+                            </p>
+                          )}
+                          <p className="text-sm text-gray-500 mt-4">
+                            Türkçe anlamı için tıklayın
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Arka Yüz */}
+                      <div className={`${styles.cardFace} ${styles.cardBack}`}>
+                        <div className="p-6 flex flex-col items-center">
+                          <h2 className="text-3xl font-bold text-gray-800 mb-6">
+                            {groupWords[currentWordIndex].turkish}
+                          </h2>
+                          {groupWords[currentWordIndex].example && (
+                            <div className="mt-6 text-center">
+                              <p className="text-lg text-gray-700 italic">
+                                {groupWords[currentWordIndex].example}
+                              </p>
+                            </div>
+                          )}
+                          <p className="text-sm text-gray-500 mt-4">
+                            İngilizce kelimeyi görmek için tıklayın
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Navigasyon Butonları */}
+                    <div className="flex justify-between mt-6">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (currentWordIndex > 0) {
+                            setCurrentWordIndex(prev => prev - 1);
+                            setIsFlipped(false);
+                          }
+                        }}
+                        className={`px-4 py-2 rounded ${
+                          currentWordIndex === 0
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                        disabled={currentWordIndex === 0}
+                      >
+                        Önceki
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (currentWordIndex < groupWords.length - 1) {
+                            setCurrentWordIndex(prev => prev + 1);
+                            setIsFlipped(false);
+                          }
+                        }}
+                        className={`px-4 py-2 rounded ${
+                          currentWordIndex === groupWords.length - 1
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                        disabled={currentWordIndex === groupWords.length - 1}
+                      >
+                        Sonraki
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <p className="text-gray-600">Bu grupta henüz kelime bulunmuyor.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      case 'addWord':
+        return (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-800">Yeni Kelime Ekle</h2>
+              </div>
+              <div className="p-6">
+                <form onSubmit={handleAddWord} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="english" className="block text-sm font-medium text-gray-700 mb-1">
+                          İngilizce Kelime <span className="text-red-500">*</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            id="english"
+                            value={newWord.english}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setNewWord({...newWord, english: value});
+                              setSearchTerm(value); // Doğrudan API çağrısı yerine searchTerm'i güncelle
+                            }}
+                            className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="İngilizce kelimeyi girin"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => fetchImageFromUnsplash(newWord.english)}
+                            className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            disabled={isLoadingImage || !newWord.english.trim()}
+                          >
+                            <Image size={20} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="turkish" className="block text-sm font-medium text-gray-700 mb-1">
+                          Türkçe Anlamı <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="turkish"
+                          value={newWord.turkish}
+                          onChange={(e) => setNewWord({...newWord, turkish: e.target.value})}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Türkçe anlamını girin"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="example" className="block text-sm font-medium text-gray-700 mb-1">
+                          Örnek Cümle
+                        </label>
+                        <textarea
+                          id="example"
+                          value={newWord.example}
+                          onChange={(e) => setNewWord({...newWord, example: e.target.value})}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Örnek cümle girin"
+                          rows={2}
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="pronunciation" className="block text-sm font-medium text-gray-700 mb-1">
+                          Telaffuz
+                        </label>
+                        <input
+                          type="text"
+                          id="pronunciation"
+                          value={newWord.pronunciation}
+                          onChange={(e) => setNewWord({...newWord, pronunciation: e.target.value})}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Telaffuzunu girin"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="groupId" className="block text-sm font-medium text-gray-700 mb-1">
+                          Kelime Grubu <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          id="groupId"
+                          value={newWord.groupId}
+                          onChange={(e) => setNewWord({...newWord, groupId: e.target.value})}
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          required
+                        >
+                          <option value="">Kelime Grubu Seçin</option>
+                          {wordGroups.map(group => (
+                            <option key={group.id} value={group.id}>{group.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Kelime Görseli
+                      </label>
+                      
+                      {isLoadingImage && (
+                        <div className="flex items-center justify-center h-40 bg-gray-50 rounded-lg">
+                          <div className="text-sm text-gray-500">Resimler yükleniyor...</div>
+                        </div>
+                      )}
+
+                      {imageError && (
+                        <div className="text-sm text-red-500 p-2 bg-red-50 rounded-lg">
+                          {imageError}
+                        </div>
+                      )}
+
+                      {images.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2">
+                          {images.map((img) => (
+                            <div
+                              key={img.id}
+                              onClick={() => handleImageSelect(img.url)}
+                              className={`relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 ${
+                                selectedImageUrl === img.url ? 'border-blue-500' : 'border-transparent'
+                              }`}
+                            >
+                              <img
+                                src={img.url}
+                                alt={newWord.english}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4">
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      Kelime Ekle
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>
