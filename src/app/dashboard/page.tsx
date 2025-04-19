@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { Home, Users, Book, Settings, LogOut, BookOpen, PlusCircle, Image, GraduationCap } from 'lucide-react';
-import { collection, addDoc, getDocs, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, setDoc, where } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import styles from './styles.module.css';
 
@@ -127,6 +127,44 @@ export default function Dashboard() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   
+  // State tanımlamalarına ekle
+  interface WordLearningStatus {
+    wordId: string;
+    lastReviewed: Date;
+    nextReview: Date;
+    difficulty: 'easy' | 'medium' | 'hard';
+    reviewCount: number;
+  }
+
+  const [wordLearningStatus, setWordLearningStatus] = useState<WordLearningStatus[]>([]);
+
+  // State tanımlamalarına ekle
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Component mount olduğunda speechSynthesis'i hazırla
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      const synth = window.speechSynthesis;
+      
+      // API'yi hazırla
+      const prepareSynthesis = () => {
+        // Boş bir utterance oluştur ve çal
+        const utterance = new SpeechSynthesisUtterance('');
+        utterance.lang = 'en-US';
+        synth.speak(utterance);
+        synth.cancel(); // Hemen iptal et
+      };
+
+      // Sayfa yüklendiğinde hazırla
+      if (synth.getVoices().length > 0) {
+        prepareSynthesis();
+      } else {
+        // Sesler yüklenene kadar bekle
+        synth.onvoiceschanged = prepareSynthesis;
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
@@ -519,6 +557,163 @@ export default function Dashboard() {
       setError('Kelimeler yüklenirken bir hata oluştu.');
     }
   };
+  
+  // Otomatik tekrar fonksiyonu
+  const speakWord = (text: string, lang: string = 'en-US') => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = 0.8;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+      };
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+      };
+      
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+  
+  // Kelime öğrenme durumunu güncelleme fonksiyonu
+  const updateWordLearningStatus = async (wordId: string, difficulty: 'easy' | 'medium' | 'hard') => {
+    if (!currentUser?.uid) {
+      console.error('Kullanıcı girişi yapılmamış');
+      return;
+    }
+
+    const now = new Date();
+    const nextReviewDate = new Date();
+    
+    // Zorluk seviyesine göre tekrar zamanını belirle
+    switch(difficulty) {
+      case 'hard':
+        nextReviewDate.setDate(now.getDate() + 1); // 1 gün sonra
+        break;
+      case 'medium':
+        nextReviewDate.setDate(now.getDate() + 3); // 3 gün sonra
+        break;
+      case 'easy':
+        nextReviewDate.setDate(now.getDate() + 7); // 7 gün sonra
+        break;
+    }
+
+    try {
+      // Firestore'da güncelle
+      const wordRef = doc(db, 'wordLearningStatus', `${currentUser.uid}_${wordId}`);
+      await setDoc(wordRef, {
+        userId: currentUser.uid,
+        wordId,
+        difficulty,
+        lastReviewed: Timestamp.fromDate(now),
+        nextReview: Timestamp.fromDate(nextReviewDate),
+        reviewCount: 1,
+        createdAt: Timestamp.fromDate(now)
+      }, { merge: true });
+
+      // Local state'i güncelle
+      setWordLearningStatus(prev => {
+        const filtered = prev.filter(status => status.wordId !== wordId);
+        return [...filtered, {
+          wordId,
+          difficulty,
+          lastReviewed: now,
+          nextReview: nextReviewDate,
+          reviewCount: 1
+        }];
+      });
+
+      // Bildirim ekle
+      console.log(`Kelime "${difficulty === 'hard' ? 'Zor' : difficulty === 'medium' ? 'Orta' : 'Kolay'}" olarak işaretlendi. 
+      ${difficulty === 'hard' ? '1 gün' : difficulty === 'medium' ? '3 gün' : '7 gün'} sonra tekrar edilecek.`);
+
+      // Başarılı olduğunda konsola yazdır
+      console.log('Kelime durumu başarıyla güncellendi:', {
+        wordId,
+        difficulty,
+        nextReview: nextReviewDate
+      });
+    } catch (error) {
+      console.error('Kelime durumu güncellenirken hata oluştu:', error);
+    }
+  };
+
+  // Kelime öğrenme durumlarını yükle
+  useEffect(() => {
+    const loadWordLearningStatus = async () => {
+      if (!currentUser?.uid) return;
+      
+      try {
+        const statusRef = collection(db, 'wordLearningStatus');
+        const q = query(
+          statusRef, 
+          where('userId', '==', currentUser.uid),
+          orderBy('nextReview', 'asc')
+        );
+        const querySnapshot = await getDocs(q);
+        
+        const statuses = querySnapshot.docs.map(doc => ({
+          wordId: doc.data().wordId,
+          difficulty: doc.data().difficulty,
+          lastReviewed: doc.data().lastReviewed.toDate(),
+          nextReview: doc.data().nextReview.toDate(),
+          reviewCount: doc.data().reviewCount
+        }));
+        
+        // Sıralı olarak tekrarlanacak kelimeleri göster
+        const now = new Date();
+        const upcomingReviews = statuses.filter(status => status.nextReview > now);
+        const dueReviews = statuses.filter(status => status.nextReview <= now);
+        
+        // Önce tekrar zamanı gelmiş olanları, sonra gelecek olanları birleştir
+        setWordLearningStatus([...dueReviews, ...upcomingReviews]);
+        
+        // Tekrar zamanı gelmiş kelimeleri konsola yazdır
+        if (dueReviews.length > 0) {
+          console.log('Tekrar zamanı gelmiş kelimeler:', dueReviews);
+        }
+      } catch (error) {
+        console.error('Kelime durumları yüklenirken hata oluştu:', error);
+      }
+    };
+
+    loadWordLearningStatus();
+  }, [currentUser?.uid]);
+  
+  // Bildirim ekleme fonksiyonu
+  const addNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    // Bildirim mantığını burada uygula ama state'e kaydetme
+    console.log(`[${type}] ${message}`);
+  };
+
+  // Tekrar zamanı kontrolü
+  useEffect(() => {
+    const checkReviewTimes = () => {
+      const now = new Date();
+      wordLearningStatus.forEach(status => {
+        if (status.nextReview <= now) {
+          addNotification(
+            `"${groupWords.find(w => w.id === status.wordId)?.english}" kelimesini tekrar etme zamanı geldi!`,
+            'warning'
+          );
+        }
+      });
+    };
+
+    // Her saat kontrol et
+    const interval = setInterval(checkReviewTimes, 3600000);
+    return () => clearInterval(interval);
+  }, [wordLearningStatus, groupWords]);
   
   if (loading) {
     return (
@@ -1049,41 +1244,97 @@ export default function Dashboard() {
         return (
           <div className="space-y-6">
             {!selectedWordGroup ? (
-              // Kelime Grubu Seçim Ekranı
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {wordGroups.map((group) => (
-                  <div
-                    key={group.id}
-                    onClick={() => {
-                      setSelectedWordGroup(group.id);
-                      fetchGroupWords(group.id);
-                    }}
-                    className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
-                  >
-                    <div className="p-6">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                        {group.title}
-                      </h3>
-                      <p className="text-sm text-gray-600 mb-4">
-                        {group.description}
-                      </p>
-                      <div className="flex items-center justify-between text-sm text-gray-500">
-                        <span className={`px-2 py-1 rounded ${
-                          group.level === 'beginner' ? 'bg-green-100 text-green-800' :
-                          group.level === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {group.level === 'beginner' ? 'Başlangıç' :
-                           group.level === 'intermediate' ? 'Orta Seviye' : 'İleri Seviye'}
-                        </span>
-                        <span>{group.wordCount} Kelime</span>
+              <div className="space-y-6">
+                {/* Tekrar Durumu Özeti */}
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Tekrar Durumu</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {['hard', 'medium', 'easy'].map(difficulty => {
+                      const words = wordLearningStatus.filter(status => status.difficulty === difficulty);
+                      const dueWords = words.filter(status => new Date(status.nextReview) <= new Date());
+                      const upcomingWords = words.filter(status => new Date(status.nextReview) > new Date());
+                      
+                      return (
+                        <div key={difficulty} className="bg-gray-50 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              difficulty === 'hard' ? 'bg-red-100 text-red-800' :
+                              difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>
+                              {difficulty === 'hard' ? 'Zor' :
+                               difficulty === 'medium' ? 'Orta' : 'Kolay'}
+                            </span>
+                          </div>
+                          
+                          {dueWords.length > 0 && (
+                            <div className="mb-2">
+                              <p className="text-sm text-red-600 font-medium">
+                                {dueWords.length} kelime tekrar zamanı geldi!
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Hemen tekrar etmelisiniz
+                              </p>
+                            </div>
+                          )}
+                          
+                          {upcomingWords.length > 0 && (
+                            <div>
+                              <p className="text-sm text-gray-600">
+                                {upcomingWords.length} kelime tekrar edilecek
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                En yakın tekrar: {new Date(Math.min(...upcomingWords.map(w => w.nextReview.getTime()))).toLocaleDateString('tr-TR')}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {words.length === 0 && (
+                            <p className="text-sm text-gray-500">
+                              Henüz kelime eklenmemiş
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Kelime Grupları */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {wordGroups.map((group) => (
+                    <div
+                      key={group.id}
+                      onClick={() => {
+                        setSelectedWordGroup(group.id);
+                        fetchGroupWords(group.id);
+                      }}
+                      className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
+                    >
+                      <div className="p-6">
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                          {group.title}
+                        </h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                          {group.description}
+                        </p>
+                        <div className="flex items-center justify-between text-sm text-gray-500">
+                          <span className={`px-2 py-1 rounded ${
+                            group.level === 'beginner' ? 'bg-green-100 text-green-800' :
+                            group.level === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {group.level === 'beginner' ? 'Başlangıç' :
+                             group.level === 'intermediate' ? 'Orta Seviye' : 'İleri Seviye'}
+                          </span>
+                          <span>{group.wordCount} Kelime</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             ) : (
-              // Kelime Öğrenme Ekranı
               <div className="max-w-2xl mx-auto">
                 <div className="flex justify-between items-center mb-6">
                   <button
@@ -1103,95 +1354,202 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {groupWords.length > 0 ? (
-                  <div className="relative">
-                    <div
-                      className={`${styles.cardContainer} ${isFlipped ? styles.flipped : ''}`}
-                      onClick={() => setIsFlipped(!isFlipped)}
-                    >
-                      {/* Ön Yüz */}
-                      <div className={styles.cardFace}>
-                        <div className="p-6 flex flex-col items-center">
-                          <div className="w-full aspect-video rounded-lg overflow-hidden mb-6">
-                            <img
-                              src={groupWords[currentWordIndex].imageUrl}
-                              alt={groupWords[currentWordIndex].english}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <h2 className="text-3xl font-bold text-gray-800 mb-4">
-                            {groupWords[currentWordIndex].english}
-                          </h2>
-                          {groupWords[currentWordIndex].pronunciation && (
-                            <p className="text-gray-600 italic mb-4">
-                              /{groupWords[currentWordIndex].pronunciation}/
-                            </p>
-                          )}
-                          <p className="text-sm text-gray-500 mt-4">
-                            Türkçe anlamı için tıklayın
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Arka Yüz */}
-                      <div className={`${styles.cardFace} ${styles.cardBack}`}>
-                        <div className="p-6 flex flex-col items-center">
-                          <h2 className="text-3xl font-bold text-gray-800 mb-6">
-                            {groupWords[currentWordIndex].turkish}
-                          </h2>
-                          {groupWords[currentWordIndex].example && (
-                            <div className="mt-6 text-center">
-                              <p className="text-lg text-gray-700 italic">
-                                {groupWords[currentWordIndex].example}
-                              </p>
-                            </div>
-                          )}
-                          <p className="text-sm text-gray-500 mt-4">
-                            İngilizce kelimeyi görmek için tıklayın
-                          </p>
-                        </div>
+                {groupWords.length > 0 && (
+                  currentWordIndex >= groupWords.length ? (
+                    <div className="text-center py-12">
+                      <div className="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-8">
+                        <div className="text-4xl mb-4">🎉</div>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Tebrikler!</h2>
+                        <p className="text-gray-600 mb-6">Bu gruptaki tüm kelimeleri tamamladınız.</p>
+                        <button
+                          onClick={() => {
+                            setSelectedWordGroup(null);
+                            setGroupWords([]);
+                            setCurrentWordIndex(0);
+                            setIsFlipped(false);
+                          }}
+                          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all"
+                        >
+                          Gruplara Dön
+                        </button>
                       </div>
                     </div>
-
-                    {/* Navigasyon Butonları */}
-                    <div className="flex justify-between mt-6">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (currentWordIndex > 0) {
-                            setCurrentWordIndex(prev => prev - 1);
-                            setIsFlipped(false);
-                          }
-                        }}
-                        className={`px-4 py-2 rounded ${
-                          currentWordIndex === 0
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                        disabled={currentWordIndex === 0}
+                  ) : (
+                    <div className="relative">
+                      <div
+                        className={`${styles.cardContainer} ${isFlipped ? styles.flipped : ''} transform transition-all duration-500 hover:scale-105`}
+                        onClick={() => setIsFlipped(!isFlipped)}
                       >
-                        Önceki
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (currentWordIndex < groupWords.length - 1) {
+                        {/* Ön Yüz */}
+                        <div className={styles.cardFace}>
+                          <div className="p-6 flex flex-col items-center">
+                            <div className="w-full max-w-2xl bg-gradient-to-br from-white to-blue-50 rounded-2xl shadow-xl overflow-hidden border border-blue-100 hover:shadow-2xl transition-shadow duration-300">
+                              <div className="p-6 flex flex-col items-center">
+                                <div className="w-full aspect-video rounded-lg overflow-hidden mb-6 shadow-md transform hover:scale-105 transition-transform duration-300">
+                                  <img
+                                    src={groupWords[currentWordIndex].imageUrl}
+                                    alt={groupWords[currentWordIndex].english}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-3 mb-4">
+                                  <h2 className="text-4xl font-bold text-gray-800 hover:text-blue-600 transition-colors duration-300">
+                                    {groupWords[currentWordIndex].english}
+                                  </h2>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      speakWord(groupWords[currentWordIndex].english);
+                                    }}
+                                    className="p-2 text-blue-600 hover:text-blue-800 focus:outline-none transform hover:scale-110 transition-transform duration-300"
+                                    disabled={isSpeaking}
+                                  >
+                                    {isSpeaking ? (
+                                      <svg className="w-8 h-8 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                      </svg>
+                                    ) : (
+                                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                </div>
+                                {groupWords[currentWordIndex].pronunciation && (
+                                  <p className="text-lg text-gray-600 italic mb-6">
+                                    /{groupWords[currentWordIndex].pronunciation}/
+                                  </p>
+                                )}
+                                
+                                {/* Türkçe anlamı göster butonu */}
+                                <button
+                                  onClick={() => setIsFlipped(!isFlipped)}
+                                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all transform hover:scale-105 mb-6"
+                                >
+                                  {isFlipped ? 'İngilizce Anlamı Göster' : 'Türkçe Anlamı Göster'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Arka Yüz */}
+                        <div className={`${styles.cardFace} ${styles.cardBack}`}>
+                          <div className="p-6 flex flex-col items-center">
+                            <div className="flex items-center gap-2">
+                              <h2 className="text-3xl font-bold text-gray-800">
+                                {groupWords[currentWordIndex].turkish}
+                              </h2>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  speakWord(groupWords[currentWordIndex].turkish, 'tr-TR');
+                                }}
+                                className="p-2 text-blue-600 hover:text-blue-800 focus:outline-none"
+                                disabled={isSpeaking}
+                              >
+                                {isSpeaking ? (
+                                  <svg className="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                ) : (
+                                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                            {groupWords[currentWordIndex].example && (
+                              <div className="mt-6 text-center">
+                                <p className="text-lg text-gray-700 italic">
+                                  {groupWords[currentWordIndex].example}
+                                </p>
+                              </div>
+                            )}
+                            
+                            {/* Zorluk Seviyesi Butonları */}
+                            <div className="mt-8 flex gap-4">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateWordLearningStatus(groupWords[currentWordIndex].id, 'hard');
+                                  addNotification('Kelime "Zor" olarak işaretlendi. 1 gün sonra tekrar edilecek.', 'warning');
+                                }}
+                                className="px-6 py-3 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all transform hover:scale-105"
+                              >
+                                Zor
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateWordLearningStatus(groupWords[currentWordIndex].id, 'medium');
+                                  addNotification('Kelime "Orta" olarak işaretlendi. 3 gün sonra tekrar edilecek.', 'info');
+                                }}
+                                className="px-6 py-3 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-all transform hover:scale-105"
+                              >
+                                Orta
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateWordLearningStatus(groupWords[currentWordIndex].id, 'easy');
+                                  addNotification('Kelime "Kolay" olarak işaretlendi. 7 gün sonra tekrar edilecek.', 'success');
+                                }}
+                                className="px-6 py-3 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all transform hover:scale-105"
+                              >
+                                Kolay
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Navigasyon Butonları */}
+                      <div className="flex justify-between mt-6">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (currentWordIndex > 0) {
+                              setCurrentWordIndex(prev => prev - 1);
+                              setIsFlipped(false);
+                            }
+                          }}
+                          className={`px-4 py-2 rounded ${
+                            currentWordIndex === 0
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                          disabled={currentWordIndex === 0}
+                        >
+                          Önceki
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const currentWordStatus = wordLearningStatus.find(status => status.wordId === groupWords[currentWordIndex].id);
+                            if (!currentWordStatus) {
+                              addNotification('Lütfen önce zorluk seviyesini seçin', 'warning');
+                              return;
+                            }
                             setCurrentWordIndex(prev => prev + 1);
                             setIsFlipped(false);
-                          }
-                        }}
-                        className={`px-4 py-2 rounded ${
-                          currentWordIndex === groupWords.length - 1
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                        disabled={currentWordIndex === groupWords.length - 1}
-                      >
-                        Sonraki
-                      </button>
+                          }}
+                          className={`px-4 py-2 rounded ${
+                            !wordLearningStatus.find(status => status.wordId === groupWords[currentWordIndex].id)
+                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                          disabled={!wordLearningStatus.find(status => status.wordId === groupWords[currentWordIndex].id)}
+                        >
+                          {currentWordIndex === groupWords.length - 1 ? 'Bitir' : 'Sonraki'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : (
+                  )
+                )}
+                {groupWords.length === 0 && (
                   <div className="text-center py-12">
                     <p className="text-gray-600">Bu grupta henüz kelime bulunmuyor.</p>
                   </div>
