@@ -36,6 +36,14 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
+    function isValidData(data) {
+      return data.keys().hasOnly(['userId', 'wordId', 'difficulty', 'lastReviewed', 'nextReview', 'reviewCount', 'createdAt', 'updatedAt']) && 
+             data.userId is string &&
+             data.wordId is string &&
+             data.difficulty in ['easy', 'medium', 'hard'] &&
+             data.reviewCount is number;
+    }
+    
     // Kullanıcı koleksiyonu
     match /users/{userId} {
       allow create: if isAuthenticated() && request.auth.uid == userId;
@@ -91,6 +99,44 @@ service cloud.firestore {
         isAdmin() || 
         (isTeacher() && resource.data.teacherId == request.auth.uid) ||
         (isProUser() && resource.data.hostId == request.auth.uid)
+      );
+    }
+    
+    // Kelime Grupları koleksiyonu
+    match /wordGroups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && (
+        isAdmin() || 
+        isEditor() || 
+        isTeacher()
+      );
+      
+      // Alt koleksiyon: Kelimeler
+      match /words/{wordId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated() && (
+          isAdmin() || 
+          isEditor() || 
+          isTeacher()
+        );
+      }
+    }
+    
+    // Kelime Öğrenme Durumu koleksiyonu
+    match /wordLearningStatus/{statusId} {
+      allow read: if isAuthenticated() && (
+        statusId.matches(request.auth.uid + "_.*") || 
+        isAdmin() || 
+        isTeacher()
+      );
+      allow create, update: if isAuthenticated() && (
+        statusId.matches(request.auth.uid + "_.*") && 
+        request.resource.data.userId == request.auth.uid &&
+        isValidData(request.resource.data)
+      );
+      allow delete: if isAuthenticated() && (
+        statusId.matches(request.auth.uid + "_.*") || 
+        isAdmin()
       );
     }
     

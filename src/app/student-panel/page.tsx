@@ -129,11 +129,6 @@ export default function StudentPanel() {
         
         // Önce tekrar zamanı gelmiş olanları, sonra gelecek olanları birleştir
         setWordLearningStatus([...dueReviews, ...upcomingReviews]);
-        
-        // Tekrar zamanı gelmiş kelimeleri konsola yazdır
-        if (dueReviews.length > 0) {
-          console.log('Tekrar zamanı gelmiş kelimeler:', dueReviews);
-        }
       } catch (error) {
         console.error('Kelime durumları yüklenirken hata oluştu:', error);
       }
@@ -308,7 +303,6 @@ export default function StudentPanel() {
     // Eğer kelime zaten kaydedilmişse, güncelle
     const existingStatus = wordLearningStatus.find(status => status.wordId === wordId);
     if (existingStatus) {
-      console.log('Bu kelime zaten kaydedilmiş');
       return;
     }
 
@@ -346,8 +340,6 @@ export default function StudentPanel() {
         difficulty,
         reviewCount: 1
       }]);
-
-      console.log(`Kelime "${difficulty === 'hard' ? 'Zor' : difficulty === 'medium' ? 'Orta' : 'Kolay'}" olarak işaretlendi.`);
     } catch (error) {
       console.error('Kelime durumu güncellenirken hata oluştu:', error);
     }

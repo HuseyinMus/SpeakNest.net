@@ -181,7 +181,7 @@ export default function Dashboard() {
         try {
           // İlk başlangıçta kullanıcı listesi olmayabilir, bu durumu ele alalım
           const usersList = await userService.getAllUsers().catch(err => {
-            console.log("Kullanıcı listesi alınamadı, boş liste kullanılıyor:", err);
+            // Kullanıcı listesi alınamadı, boş liste kullanılıyoruz
             return [];
           });
           
@@ -634,15 +634,6 @@ export default function Dashboard() {
       });
 
       // Bildirim ekle
-      console.log(`Kelime "${difficulty === 'hard' ? 'Zor' : difficulty === 'medium' ? 'Orta' : 'Kolay'}" olarak işaretlendi. 
-      ${difficulty === 'hard' ? '1 gün' : difficulty === 'medium' ? '3 gün' : '7 gün'} sonra tekrar edilecek.`);
-
-      // Başarılı olduğunda konsola yazdır
-      console.log('Kelime durumu başarıyla güncellendi:', {
-        wordId,
-        difficulty,
-        nextReview: nextReviewDate
-      });
     } catch (error) {
       console.error('Kelime durumu güncellenirken hata oluştu:', error);
     }
@@ -677,11 +668,6 @@ export default function Dashboard() {
         
         // Önce tekrar zamanı gelmiş olanları, sonra gelecek olanları birleştir
         setWordLearningStatus([...dueReviews, ...upcomingReviews]);
-        
-        // Tekrar zamanı gelmiş kelimeleri konsola yazdır
-        if (dueReviews.length > 0) {
-          console.log('Tekrar zamanı gelmiş kelimeler:', dueReviews);
-        }
       } catch (error) {
         console.error('Kelime durumları yüklenirken hata oluştu:', error);
       }
@@ -692,10 +678,9 @@ export default function Dashboard() {
   
   // Bildirim ekleme fonksiyonu
   const addNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
-    // Bildirim mantığını burada uygula ama state'e kaydetme
-    console.log(`[${type}] ${message}`);
+    // İleride bildirim sistemi eklenebilir
   };
-
+  
   // Tekrar zamanı kontrolü
   useEffect(() => {
     const checkReviewTimes = () => {

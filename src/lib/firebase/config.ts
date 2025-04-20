@@ -13,10 +13,6 @@ const firebaseConfig = {
   appId: "1:198254015679:web:1f645148e77bd8ec69820a"
 };
 
-// Debug için log ekleme
-console.log("Firebase Config:", firebaseConfig);
-console.log("Environment:", process.env.NODE_ENV);
-
 // Firebase'i başlat
 const app = initializeApp(firebaseConfig);
 
