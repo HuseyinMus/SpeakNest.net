@@ -1,24 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { auth } from '@/lib/firebase/config';
-import { onAuthStateChanged } from 'firebase/auth';
+import { useAuth } from '@/lib/context/AuthContext';
 
 export default function Header() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
+  const { currentUser, userProfile, loading, signOut } = useAuth();
 
   if (loading) {
     return null;
@@ -37,10 +26,10 @@ export default function Header() {
             </div>
           </div>
           <div className="space-x-4">
-            {user ? (
+            {currentUser ? (
               <div className="flex items-center space-x-4">
                 <span className="text-sm">
-                  Merhaba, {user.displayName || 'Kullanıcı'}
+                  Merhaba, {userProfile?.displayName || currentUser.displayName || 'Kullanıcı'}
                 </span>
                 <button
                   onClick={() => router.push('/profile')}
@@ -49,7 +38,7 @@ export default function Header() {
                   Profilim
                 </button>
                 <button
-                  onClick={() => auth.signOut()}
+                  onClick={() => signOut()}
                   className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                 >
                   Çıkış Yap

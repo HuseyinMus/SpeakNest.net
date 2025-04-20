@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Yardımcı fonksiyonlar
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isProUser() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'proUser';
+    }
+    
+    function isTeacher() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    
+    function isStudent() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    function isMeetingHost() {
+      return isAuthenticated() && resource.data.hostId == request.auth.uid;
+    }
+    
+    function isMeetingParticipant() {
+      return isAuthenticated() && 
+        (resource.data.participants != null && 
+         resource.data.participants.hasAny([request.auth.uid]));
+    }
+    
+    // Koleksiyon erişim kuralları
+    
+    // Kullanıcılar koleksiyonu
+    match /users/{userId} {
+      // Kendi profilini, herkes okuyabilir ve güncelleyebilir
+      // Admin tüm kullanıcıları yönetebilir
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Toplantılar koleksiyonu
+    match /meetings/{meetingId} {
+      // Toplantı okuma kuralları
+      allow read: if isAuthenticated() && 
+        (isAdmin() || 
+         isMeetingHost() || 
+         isMeetingParticipant() || 
+         resource.data.status == 'active');
+      
+      // Toplantı oluşturma kuralları
+      allow create: if isAuthenticated() && 
+        (isAdmin() || 
+         isProUser() || 
+         isTeacher()) && 
+        request.resource.data.hostId == request.auth.uid;
+      
+      // Toplantı güncelleme kuralları
+      allow update: if isAuthenticated() && 
+        (isAdmin() || 
+         (isMeetingHost() && 
+          request.resource.data.hostId == request.auth.uid));
+      
+      // Toplantı silme kuralları
+      allow delete: if isAuthenticated() && 
+        (isAdmin() || isMeetingHost());
+    }
+    
+    // Yorumlar koleksiyonu
+    match /comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        (isAdmin() || isDocOwner());
+    }
+    
+    // Mesajlar koleksiyonu
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && 
+        (isAdmin() || isDocOwner());
+    }
+    
+    // Değerlendirmeler koleksiyonu
+    match /evaluations/{evaluationId} {
+      allow read: if isAuthenticated() && 
+        (isAdmin() || isProUser() || isTeacher() || 
+         resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && 
+        (isAdmin() || isProUser() || isTeacher());
+      allow update, delete: if isAuthenticated() && 
+        (isAdmin() || isDocOwner());
+    }
+    
+    // Bildirimler koleksiyonu
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && 
+        (isAdmin() || resource.data.userId == request.auth.uid);
+    }
+    
+    // Varsayılan olarak erişim reddet
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+} 

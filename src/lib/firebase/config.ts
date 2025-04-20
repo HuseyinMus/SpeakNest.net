@@ -3,15 +3,27 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
-// Firebase yapılandırması
+// Firebase yapılandırması - çevre değişkenlerinden al
 const firebaseConfig = {
-  apiKey: "AIzaSyDi-ocPnlw8pc_gmkJORFPF2lUkj8Raz6w",
-  authDomain: "yeniapp2-105be.firebaseapp.com",
-  projectId: "yeniapp2-105be",
-  storageBucket: "yeniapp2-105be.appspot.com",
-  messagingSenderId: "198254015679",
-  appId: "1:198254015679:web:1f645148e77bd8ec69820a"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
+
+// Geliştirme modunda değerlerin mevcut olup olmadığını kontrol et
+if (process.env.NODE_ENV !== 'production') {
+  const missingEnvVars = Object.entries(firebaseConfig)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key);
+  
+  if (missingEnvVars.length > 0) {
+    console.warn(`Firebase yapılandırmasında eksik çevre değişkenleri: ${missingEnvVars.join(', ')}`);
+    console.warn('Lütfen .env.local dosyanızı kontrol edin ve eksik değişkenleri ekleyin.');
+  }
+}
 
 // Firebase'i başlat
 const app = initializeApp(firebaseConfig);

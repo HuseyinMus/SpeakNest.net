@@ -1,59 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { auth, db } from '@/lib/firebase/config';
-import { doc, getDoc } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
 import Header from '@/components/Header';
+import { useAuth } from '@/lib/context/AuthContext';
 
 export default function Home() {
-  const [user, setUser] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  
   const router = useRouter();
+  const { currentUser, userProfile, loading, signOut } = useAuth();
   
-  useEffect(() => {
-    const checkAuth = async () => {
-      const unsubscribe = auth.onAuthStateChanged(async (user) => {
-        if (user) {
-          setUser(user);
-          await fetchUserProfile(user.uid);
-        }
-        setLoading(false);
-      });
-      
-      return () => unsubscribe();
-    };
+  const navigateToUserPanel = () => {
+    if (!userProfile) return;
     
-    checkAuth();
-  }, []);
-  
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', userId));
-      
-      if (userDoc.exists()) {
-        setUserProfile(userDoc.data());
-      }
-    } catch (err) {
-      console.error('Kullanıcı bilgileri alınamadı:', err);
-    }
-  };
-  
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      setUser(null);
-      setUserProfile(null);
-    } catch (err) {
-      console.error('Çıkış yapılamadı:', err);
-    }
-  };
-  
-  const navigateToUserPanel = (userProfile) => {
     if (userProfile.role === 'admin') {
       router.push('/dashboard');
     } else if (userProfile.role === 'teacher') {
@@ -62,6 +21,14 @@ export default function Home() {
       router.push('/prouser-panel');
     } else {
       router.push('/student-panel');
+    }
+  };
+  
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (err) {
+      console.error('Çıkış yapılamadı:', err);
     }
   };
   
@@ -81,7 +48,7 @@ export default function Home() {
       
       return (
         <button 
-          onClick={() => navigateToUserPanel(userProfile)} 
+          onClick={navigateToUserPanel} 
           className="bg-green-600 hover:bg-green-700 text-white rounded-md px-4 py-2 transition-colors"
         >
           {buttonText}
@@ -130,9 +97,9 @@ export default function Home() {
               Profesyonel eğitmenlerle birebir konuşma pratiği yaparak İngilizce konuşma becerilerinizi hızla geliştirin. Her seviyeye uygun dersler ve esnek program.
             </p>
             
-            {user ? (
+            {currentUser ? (
               <button
-                onClick={() => navigateToUserPanel(userProfile)}
+                onClick={navigateToUserPanel}
                 className="px-6 py-3 bg-green-600 text-white rounded-lg shadow hover:bg-green-700 transition-colors text-lg"
               >
                 Derslerime Git
@@ -249,72 +216,89 @@ export default function Home() {
           <div className="text-center mt-12">
             <Link
               href="/pricing"
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+              className="inline-block px-6 py-3 border border-green-600 text-green-600 rounded-lg hover:bg-green-600 hover:text-white transition-colors"
             >
-              Tüm Paketleri İncele
+              Tüm Paketleri Karşılaştır
             </Link>
           </div>
         </div>
       </div>
       
-      {/* Call to Action */}
-      <div className="bg-green-600 text-white py-16">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold mb-6">Hemen Öğrenmeye Başlayın</h2>
-          <p className="text-xl mb-8 max-w-3xl mx-auto">
-            Kariyerinizde ilerlemeniz için ihtiyaç duyduğunuz tüm eğitimler bir tık uzağınızda. 
-            Sınırsız erişim ve güncel içeriklerle hemen öğrenmeye başlayın.
-          </p>
+      {/* Testimonials */}
+      <div className="container mx-auto px-4 py-16">
+        <h2 className="text-3xl font-bold text-center mb-12 text-gray-900">Öğrencilerimizin Yorumları</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-blue-200 rounded-full overflow-hidden mr-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-full w-full text-blue-500 p-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-800">Ayşe Yılmaz</h3>
+                <p className="text-gray-500 text-sm">İstanbul</p>
+              </div>
+            </div>
+            <p className="text-gray-600 italic">"SpeakNest ile 3 ay içinde iş görüşmelerimi İngilizce yapabilecek düzeye geldim. Eğitmenlerim çok sabırlı ve motive ediciydi!"</p>
+          </div>
           
-          {user ? (
-            <button
-              onClick={() => navigateToUserPanel(userProfile)}
-              className="px-8 py-4 bg-white text-green-700 rounded-lg shadow hover:bg-green-50 transition-colors text-lg font-medium"
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-green-200 rounded-full overflow-hidden mr-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-full w-full text-green-500 p-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-800">Mehmet Kaya</h3>
+                <p className="text-gray-500 text-sm">Ankara</p>
+              </div>
+            </div>
+            <p className="text-gray-600 italic">"Yurtdışında eğitim almak için hazırlanırken SpeakNest'in esnek programı sayesinde hem çalışıp hem de İngilizce eğitimimi tamamlayabildim."</p>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-purple-200 rounded-full overflow-hidden mr-4">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-full w-full text-purple-500 p-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-800">Zeynep Demir</h3>
+                <p className="text-gray-500 text-sm">İzmir</p>
+              </div>
+            </div>
+            <p className="text-gray-600 italic">"Konuşma pratiği yapmak için en iyi platform! Eğitmenler gerçekten profesyonel ve dersler çok interaktif. Kendimi her gün geliştirdiğimi hissediyorum."</p>
+          </div>
+        </div>
+      </div>
+      
+      {/* CTA Section */}
+      <div className="bg-green-600 py-16">
+        <div className="container mx-auto px-4 text-center">
+          <h2 className="text-3xl font-bold text-white mb-6">Hemen İngilizce Yolculuğunuza Başlayın</h2>
+          <p className="text-green-100 mb-8 max-w-xl mx-auto">Profesyonel eğitmenlerimizle tanışın ve İngilizce konuşma becerilerinizi geliştirin.</p>
+          
+          {currentUser ? (
+            <button 
+              onClick={navigateToUserPanel}
+              className="px-8 py-3 bg-white text-green-700 rounded-lg shadow hover:bg-green-50 transition-colors text-lg font-medium"
             >
-              Derslerime Git
+              Hesabıma Git
             </button>
           ) : (
-            <Link
+            <Link 
               href="/register"
-              className="px-8 py-4 bg-white text-green-700 rounded-lg shadow hover:bg-green-50 transition-colors text-lg font-medium"
+              className="px-8 py-3 bg-white text-green-700 rounded-lg shadow hover:bg-green-50 transition-colors text-lg font-medium"
             >
-              Şimdi Kaydol
+              Ücretsiz Üye Ol
             </Link>
           )}
         </div>
       </div>
-      
-      {/* Footer */}
-      <footer className="bg-gray-800 text-white py-8">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="mb-6 md:mb-0">
-              <h2 className="text-2xl font-semibold">SpeakNest</h2>
-              <p className="mt-2 text-gray-400">© 2023 Tüm Hakları Saklıdır</p>
-            </div>
-            
-            <div className="flex space-x-8">
-              <div>
-                <h3 className="font-semibold mb-3">Hakkımızda</h3>
-                <ul className="space-y-2">
-                  <li><Link href="/about" className="text-gray-400 hover:text-white">Biz Kimiz</Link></li>
-                  <li><Link href="/teachers" className="text-gray-400 hover:text-white">Eğitmenlerimiz</Link></li>
-                  <li><Link href="/career" className="text-gray-400 hover:text-white">Kariyer</Link></li>
-                </ul>
-              </div>
-              
-              <div>
-                <h3 className="font-semibold mb-3">Destek</h3>
-                <ul className="space-y-2">
-                  <li><Link href="/contact" className="text-gray-400 hover:text-white">İletişim</Link></li>
-                  <li><Link href="/faq" className="text-gray-400 hover:text-white">SSS</Link></li>
-                  <li><Link href="/help" className="text-gray-400 hover:text-white">Yardım Merkezi</Link></li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

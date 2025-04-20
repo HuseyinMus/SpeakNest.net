@@ -1,27 +1,7 @@
-import { useState, useEffect } from 'react';
-import { auth } from '@/lib/firebase/config';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { useAuth as useAuthFromContext } from '@/lib/context/AuthContext';
 
+// Bu hook, yeni context-based hook'a bir referans olarak hizmet eder
+// ve geriye dönük uyumluluk için korunmuştur.
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      (user) => {
-        setUser(user);
-        setLoading(false);
-      },
-      (error) => {
-        setError(error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  return { user, loading, error };
+  return useAuthFromContext();
 } 

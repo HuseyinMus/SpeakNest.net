@@ -7,7 +7,8 @@ import { collection, query, where, getDocs, orderBy, setDoc, Timestamp, doc } fr
 import Image from 'next/image';
 import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut, BookOpen, AlertCircle, CheckCircle } from 'lucide-react';
 import { useLanguage } from '@/lib/context/LanguageContext';
-import { useAuthState } from 'react-firebase-hooks/auth';
+import { useAuth } from '@/lib/context/AuthContext';
+import DashboardLayout from '@/components/layouts/DashboardLayout';
 
 // Kelime Grubu tipi tanımlaması
 interface WordGroup {
@@ -41,6 +42,7 @@ interface Word {
 
 // Kullanıcı profili interface'i
 interface UserProfile {
+  id: string;
   displayName?: string;
   email?: string;
   photoURL?: string;
@@ -49,6 +51,9 @@ interface UserProfile {
   englishLevel?: string;
   firstName?: string;
   lastName?: string;
+  metadata?: {
+    lastSignInTime?: string;
+  };
 }
 
 // Kurs interface'i
@@ -73,10 +78,10 @@ interface Assignment {
 export default function StudentPanel() {
   const { t } = useLanguage();
   const router = useRouter();
+  const { currentUser, userProfile, signOut } = useAuth();
   
   // Temel state'ler
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [activeCourses] = useState<Course[]>([]);
   const [pendingAssignments] = useState<Assignment[]>([]);
   const [error, setError] = useState('');
@@ -96,20 +101,18 @@ export default function StudentPanel() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
   
-  const [authUser] = useAuthState(auth);
-  
   const [isSpeaking, setIsSpeaking] = useState(false);
   
   // Kelime öğrenme durumlarını yükle
   useEffect(() => {
     const loadWordLearningStatus = async () => {
-      if (!authUser?.uid) return;
+      if (!currentUser?.uid) return;
       
       try {
         const statusRef = collection(db, 'wordLearningStatus');
         const q = query(
           statusRef, 
-          where('userId', '==', authUser.uid),
+          where('userId', '==', currentUser.uid),
           orderBy('nextReview', 'asc')
         );
         const querySnapshot = await getDocs(q);
@@ -135,15 +138,14 @@ export default function StudentPanel() {
     };
 
     loadWordLearningStatus();
-  }, [authUser?.uid]);
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const unsubscribe = auth.onAuthStateChanged(async (user) => {
           if (user) {
-            setUserProfile(user.toJSON());
-            // Kelime gruplarını getir
+            // Kullanıcı giriş yapmışsa
             await fetchWordGroups();
           } else {
             // Kullanıcı giriş yapmamışsa login sayfasına yönlendir
@@ -234,7 +236,7 @@ export default function StudentPanel() {
       window.speechSynthesis.cancel(); // Varsa ses çalmayı durdur
       
       // Çıkış işlemini gerçekleştir
-      await auth.signOut();
+      await signOut();
       
       // Sayfayı yönlendir
       window.location.href = '/login';
@@ -295,7 +297,7 @@ export default function StudentPanel() {
 
   // updateWordLearningStatus fonksiyonunu ekle
   const updateWordLearningStatus = async (wordId: string, difficulty: 'easy' | 'medium' | 'hard') => {
-    if (!authUser?.uid) {
+    if (!currentUser?.uid) {
       console.error('Kullanıcı girişi yapılmamış');
       return;
     }
@@ -322,9 +324,9 @@ export default function StudentPanel() {
     }
 
     try {
-      const wordRef = doc(db, 'wordLearningStatus', `${authUser.uid}_${wordId}`);
+      const wordRef = doc(db, 'wordLearningStatus', `${currentUser.uid}_${wordId}`);
       await setDoc(wordRef, {
-        userId: authUser.uid,
+        userId: currentUser.uid,
         wordId,
         difficulty,
         lastReviewed: Timestamp.fromDate(now),
@@ -375,15 +377,60 @@ export default function StudentPanel() {
   
   // Menü öğeleri
   const menuItems = [
-    { id: 'dashboard', label: t('home'), icon: <Home size={18} /> },
-    { id: 'sessions', label: t('conversationMeetings'), icon: <MessageCircle size={18} /> },
-    { id: 'practice-rooms', label: t('practiceRooms'), icon: <Users size={18} /> },
-    { id: 'upcoming', label: t('upcomingPractices'), icon: <Clock size={18} /> },
-    { id: 'assignments', label: t('assignments'), icon: <FileText size={18} /> },
-    { id: 'vocabulary', label: 'Kelime Öğren', icon: <BookOpen size={18} /> },
-    { id: 'profile', label: t('profile'), icon: <User size={18} /> },
-    { id: 'statistics', label: t('statistics'), icon: <BarChart size={18} /> },
-    { id: 'settings', label: t('settings'), icon: <Settings size={18} /> },
+    { 
+      id: 'dashboard', 
+      label: t('home'), 
+      icon: <Home size={18} />,
+      onClick: () => setActiveTab('dashboard')
+    },
+    { 
+      id: 'sessions', 
+      label: t('conversationMeetings'), 
+      icon: <MessageCircle size={18} />,
+      onClick: () => setActiveTab('sessions')
+    },
+    { 
+      id: 'practice-rooms', 
+      label: t('practiceRooms'), 
+      icon: <Users size={18} />,
+      onClick: () => setActiveTab('practice-rooms')
+    },
+    { 
+      id: 'upcoming', 
+      label: t('upcomingPractices'), 
+      icon: <Clock size={18} />,
+      onClick: () => setActiveTab('upcoming')
+    },
+    { 
+      id: 'assignments', 
+      label: t('assignments'), 
+      icon: <FileText size={18} />,
+      onClick: () => setActiveTab('assignments')
+    },
+    { 
+      id: 'vocabulary', 
+      label: 'Kelime Öğren', 
+      icon: <BookOpen size={18} />,
+      onClick: () => setActiveTab('vocabulary')
+    },
+    { 
+      id: 'profile', 
+      label: t('profile'), 
+      icon: <User size={18} />,
+      onClick: () => setActiveTab('profile')
+    },
+    { 
+      id: 'statistics', 
+      label: t('statistics'), 
+      icon: <BarChart size={18} />,
+      onClick: () => setActiveTab('statistics')
+    },
+    { 
+      id: 'settings', 
+      label: t('settings'), 
+      icon: <Settings size={18} />,
+      onClick: () => setActiveTab('settings')
+    },
   ];
 
   // Kelime grubuna ait kelimeleri getir
@@ -1364,12 +1411,14 @@ export default function StudentPanel() {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Son Giriş:</span>
                   <span className="font-medium text-slate-700">
-                    {authUser?.metadata?.lastSignInTime ? new Date(authUser.metadata.lastSignInTime).toLocaleDateString('tr-TR') : 'Belirtilmemiş'}
+                    {currentUser?.metadata?.lastSignInTime ? new Date(currentUser.metadata.lastSignInTime).toLocaleDateString('tr-TR') : 'Belirtilmemiş'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">İngilizce Seviyesi:</span>
-                  <span className="font-medium text-slate-700">{userProfile?.englishLevel || 'Belirtilmemiş'}</span>
+                  <span className="font-medium text-slate-700">
+                    {(userProfile as any)?.englishLevel || 'Belirtilmemiş'}
+                  </span>
                 </div>
               </div>
               
@@ -1430,101 +1479,15 @@ export default function StudentPanel() {
   };
   
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
-      {/* Mobil menü butonu */}
-      <div className="bg-white p-4 flex justify-between items-center md:hidden border-b shadow-sm sticky top-0 z-50">
-        <h1 className="text-lg font-semibold text-slate-800">{t('appName')}</h1>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-          >
-            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
-      </div>
-      
-      {/* Sol yan çubuğu - mobil için modal, desktop için sabit */}
-      <div className={`
-        fixed inset-0 z-40 md:relative md:inset-auto
-        transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
-        md:translate-x-0 transition-transform duration-300 ease-in-out
-        flex flex-col w-64 bg-white border-r border-slate-200 shadow-sm
-      `}>
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {userProfile?.photoURL ? (
-              <div className="relative w-9 h-9 rounded-full overflow-hidden border border-slate-200">
-                <Image 
-                  src={userProfile.photoURL} 
-                  alt={userProfile.displayName || t('profile')} 
-                  className="object-cover"
-                  fill
-                />
-              </div>
-            ) : (
-              <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold">
-                {(userProfile?.displayName?.charAt(0) || userProfile?.firstName?.charAt(0) || 'S').toUpperCase()}
-              </div>
-            )}
-            <div>
-              <div className="text-sm font-medium text-slate-800 truncate max-w-[150px]">
-                {userProfile?.displayName || userProfile?.firstName || t('student')}
-              </div>
-              <div className="text-xs text-slate-500">{userProfile?.role || t('student')}</div>
-            </div>
-          </div>
-          <button 
-            onClick={() => setSidebarOpen(false)}
-            className="p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 md:hidden"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        
-        {/* Menü öğeleri */}
-        <div className="flex-1 overflow-y-auto p-3">
-          <nav className="space-y-1">
-            {menuItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setSidebarOpen(false);
-                }}
-                className={`
-                  w-full flex items-center px-3 py-2 rounded-md text-sm
-                  transition-colors
-                  ${activeTab === item.id 
-                    ? 'bg-slate-100 text-slate-800 font-medium' 
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-                  }
-                `}
-              >
-                {item.icon}
-                <span className="ml-3">{item.label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-        <div className="p-3 border-t">
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              handleLogout();
-            }}
-            className="w-full flex items-center px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50 transition-colors"
-          >
-            <LogOut size={18} />
-            <span className="ml-3">Çıkış Yap</span>
-          </button>
-        </div>
-      </div>
-      
-      {/* Ana içerik alanı */}
-      <div className="flex-1 p-4 md:p-6">
-        {renderContent()}
-      </div>
-    </div>
+    <DashboardLayout 
+      menuItems={menuItems}
+      activeItemId={activeTab}
+      header={{
+        title: t('studentPanel'),
+        description: t('welcomeMessage', { name: userProfile?.displayName || userProfile?.firstName || t('student') })
+      }}
+    >
+      {renderContent()}
+    </DashboardLayout>
   );
 }
