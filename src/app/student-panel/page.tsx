@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { auth, db } from '@/lib/firebase/config';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, orderBy, limit, setDoc, Timestamp, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, setDoc, Timestamp, doc } from 'firebase/firestore';
 import Image from 'next/image';
-import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut, BookOpen} from 'lucide-react';
+import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut, BookOpen, AlertCircle, CheckCircle } from 'lucide-react';
 import { useLanguage } from '@/lib/context/LanguageContext';
 import { useAuthState } from 'react-firebase-hooks/auth';
 
@@ -77,8 +77,8 @@ export default function StudentPanel() {
   // Temel state'ler
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [activeCourses, setActiveCourses] = useState<Course[]>([]);
-  const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
+  const [activeCourses] = useState<Course[]>([]);
+  const [pendingAssignments] = useState<Assignment[]>([]);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -233,55 +233,6 @@ export default function StudentPanel() {
     setSearchFilter(search);
   };
   
-  // Öğrenci verilerini getir (kurslar, ödevler)
-  const fetchStudentData = async (userId: string) => {
-    try {
-      // Aktif kursları getir
-      const coursesQuery = query(
-        collection(db, 'courses'),
-        where('students', 'array-contains', userId),
-        where('isActive', '==', true)
-      );
-      
-      const coursesSnapshot = await getDocs(coursesQuery);
-      const coursesData: Course[] = [];
-      
-      coursesSnapshot.forEach((doc) => {
-        coursesData.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      
-      setActiveCourses(coursesData);
-      
-      // Bekleyen ödevleri getir
-      const assignmentsQuery = query(
-        collection(db, 'assignments'),
-        where('studentId', '==', userId),
-        where('status', '==', 'pending'),
-        orderBy('dueDate', 'asc'),
-        limit(5)
-      );
-      
-      const assignmentsSnapshot = await getDocs(assignmentsQuery);
-      const assignmentsData: Assignment[] = [];
-      
-      assignmentsSnapshot.forEach((doc) => {
-        assignmentsData.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      
-      setPendingAssignments(assignmentsData);
-      
-    } catch (err) {
-      console.error('Öğrenci verileri alınamadı:', err);
-      setError('Kurs ve ödev bilgileri alınırken bir hata oluştu.');
-    }
-  };
-
   const handleLogout = async () => {
     try {
       // Önce tüm Firebase işlemlerini temizle
@@ -472,13 +423,18 @@ export default function StudentPanel() {
     const [isFlipped, setIsFlipped] = useState(false);
     const [selectedDifficulty, setSelectedDifficulty] = useState<'easy' | 'medium' | 'hard' | null>(null);
 
-    // Mevcut kelime için öğrenme durumunu kontrol et
-    const currentWordStatus = wordLearningStatus.find(status => status.wordId === word.id);
-
     return (
       <div className="w-full max-w-2xl mx-auto p-4">
-        <div className="relative h-[500px]">
-          <div
+        {/* İlerleme Göstergesi */}
+        <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+          <div 
+            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+            style={{ width: `${(currentWordIndex / groupWords.length) * 100}%` }}
+          ></div>
+        </div>
+
+        <div className="relative w-full h-[300px] md:h-[500px] perspective-1000">
+          <div 
             className={`absolute w-full h-full transition-transform duration-500 ${isFlipped ? 'rotate-y-180' : ''}`}
             onClick={() => setIsFlipped(!isFlipped)}
             style={{ 
@@ -494,7 +450,7 @@ export default function StudentPanel() {
                 transform: 'rotateY(0deg)'
               }}
             >
-              <div className="w-full h-full bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+              <div className="w-full h-full bg-gradient-to-br from-blue-50 to-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
                 <div className="p-8 h-full flex flex-col justify-center items-center">
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-4 mb-4">
@@ -550,14 +506,14 @@ export default function StudentPanel() {
                 transform: 'rotateY(180deg)'
               }}
             >
-              <div className="w-full h-full bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+              <div className="w-full h-full bg-gradient-to-br from-blue-50 to-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
                 <div className="p-8 h-full flex flex-col justify-center items-center">
                   <div className="text-center">
                     <h2 className="text-3xl font-bold text-gray-800 mb-4">
                       {word.turkish}
                     </h2>
                     {word.example && (
-                      <div className="mt-6">
+                      <div className="mt-6 bg-gray-50 p-4 rounded-lg">
                         <p className="text-xl text-gray-700 italic">
                           {word.example}
                         </p>
@@ -573,13 +529,14 @@ export default function StudentPanel() {
                         setSelectedDifficulty('hard');
                         updateWordLearningStatus(word.id, 'hard');
                       }}
-                      className={`px-6 py-3 rounded-lg ${
+                      className={`flex-1 px-6 py-3 rounded-lg ${
                         selectedDifficulty === 'hard' 
                           ? 'bg-red-600 text-white' 
                           : 'bg-red-100 text-red-800 hover:bg-red-200'
-                      } focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all transform hover:scale-105`}
+                      } focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all transform hover:scale-105 flex items-center justify-center gap-2`}
                     >
-                      Zor
+                      <AlertCircle className="w-5 h-5" />
+                      <span>Zor</span>
                     </button>
                     <button
                       onClick={(e) => {
@@ -587,13 +544,14 @@ export default function StudentPanel() {
                         setSelectedDifficulty('medium');
                         updateWordLearningStatus(word.id, 'medium');
                       }}
-                      className={`px-6 py-3 rounded-lg ${
+                      className={`flex-1 px-6 py-3 rounded-lg ${
                         selectedDifficulty === 'medium' 
                           ? 'bg-yellow-600 text-white' 
                           : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                      } focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-all transform hover:scale-105`}
+                      } focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-all transform hover:scale-105 flex items-center justify-center gap-2`}
                     >
-                      Orta
+                      <Clock className="w-5 h-5" />
+                      <span>Orta</span>
                     </button>
                     <button
                       onClick={(e) => {
@@ -601,13 +559,14 @@ export default function StudentPanel() {
                         setSelectedDifficulty('easy');
                         updateWordLearningStatus(word.id, 'easy');
                       }}
-                      className={`px-6 py-3 rounded-lg ${
+                      className={`flex-1 px-6 py-3 rounded-lg ${
                         selectedDifficulty === 'easy' 
                           ? 'bg-green-600 text-white' 
                           : 'bg-green-100 text-green-800 hover:bg-green-200'
-                      } focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all transform hover:scale-105`}
+                      } focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all transform hover:scale-105 flex items-center justify-center gap-2`}
                     >
-                      Kolay
+                      <CheckCircle className="w-5 h-5" />
+                      <span>Kolay</span>
                     </button>
                   </div>
                 </div>
@@ -666,83 +625,222 @@ export default function StudentPanel() {
       return (
         <div className="space-y-6">
           {/* Tekrar Durumu Özeti */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Tekrar Durumu</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {['hard', 'medium', 'easy'].map(difficulty => {
-                const words = wordLearningStatus.filter(status => status.difficulty === difficulty);
+          <div className="bg-white rounded-xl shadow-lg p-6 overflow-hidden">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-gray-800">Tekrar Durumu</h3>
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                {wordLearningStatus.length} Toplam Kelime
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { key: 'hard', label: 'Zor', icon: <AlertCircle className="w-5 h-5" />, color: 'red' },
+                { key: 'medium', label: 'Orta', icon: <Clock className="w-5 h-5" />, color: 'amber' },
+                { key: 'easy', label: 'Kolay', icon: <CheckCircle className="w-5 h-5" />, color: 'emerald' }
+              ].map(({ key, label, icon, color }) => {
+                const words = wordLearningStatus.filter(status => status.difficulty === key);
                 const dueWords = words.filter(status => new Date(status.nextReview) <= new Date());
                 const upcomingWords = words.filter(status => new Date(status.nextReview) > new Date());
+                const totalCount = words.length;
+                const duePercentage = totalCount > 0 ? (dueWords.length / totalCount) * 100 : 0;
+                
+                const colorClass = {
+                  red: {
+                    bg: 'bg-red-400',
+                    light: 'bg-red-100',
+                    text: 'text-red-700',
+                    border: 'border-red-200',
+                    darkText: 'text-red-800',
+                    lightBg: 'bg-red-50'
+                  },
+                  amber: {
+                    bg: 'bg-amber-400',
+                    light: 'bg-amber-100',
+                    text: 'text-amber-700',
+                    border: 'border-amber-200',
+                    darkText: 'text-amber-800',
+                    lightBg: 'bg-amber-50'
+                  },
+                  emerald: {
+                    bg: 'bg-emerald-400',
+                    light: 'bg-emerald-100',
+                    text: 'text-emerald-700',
+                    border: 'border-emerald-200',
+                    darkText: 'text-emerald-800',
+                    lightBg: 'bg-emerald-50'
+                  }
+                }[color as 'red' | 'amber' | 'emerald'] || {
+                  bg: 'bg-gray-400',
+                  light: 'bg-gray-100',
+                  text: 'text-gray-700',
+                  border: 'border-gray-200',
+                  darkText: 'text-gray-800',
+                  lightBg: 'bg-gray-50'
+                };
                 
                 return (
-                  <div key={difficulty} className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        difficulty === 'hard' ? 'bg-red-100 text-red-800' :
-                        difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                        {difficulty === 'hard' ? 'Zor' :
-                         difficulty === 'medium' ? 'Orta' : 'Kolay'}
-                      </span>
+                  <div 
+                    key={key} 
+                    className={`rounded-xl p-5 border ${colorClass.border} ${colorClass.lightBg} transition-all duration-300 hover:shadow-md`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-2 rounded-full ${colorClass.light} ${colorClass.text}`}>
+                          {icon}
+                        </div>
+                        <span className="font-medium text-gray-800">{label}</span>
+                      </div>
+                      <span className={`font-semibold text-xl ${colorClass.darkText}`}>{words.length}</span>
                     </div>
                     
-                    {dueWords.length > 0 && (
-                      <div className="mb-2">
-                        <p className="text-sm text-red-600 font-medium">
-                          {dueWords.length} kelime tekrar zamanı geldi!
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Hemen tekrar etmelisiniz
-                        </p>
-                      </div>
-                    )}
+                    {/* İlerleme çubuğu */}
+                    <div className="w-full h-2 bg-gray-200 rounded-full mb-3">
+                      <div 
+                        className={`h-2 ${colorClass.bg} rounded-full`} 
+                        style={{ width: `${duePercentage}%` }}
+                      ></div>
+                    </div>
                     
-                    {upcomingWords.length > 0 && (
-                      <div>
-                        <p className="text-sm text-gray-600">
-                          {upcomingWords.length} kelime tekrar edilecek
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          En yakın tekrar: {new Date(Math.min(...upcomingWords.map(w => w.nextReview.getTime()))).toLocaleDateString('tr-TR')}
-                        </p>
+                    {dueWords.length > 0 ? (
+                      <div className="mb-3 flex items-start">
+                        <div className={`p-1.5 rounded-full ${colorClass.light} ${colorClass.text} mr-2 mt-0.5`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M10 2h4"></path><path d="M12 14v-4"></path><circle cx="12" cy="14" r="8"></circle>
+                          </svg>
+                        </div>
+                        <div>
+                          <p className={`text-sm font-medium ${colorClass.darkText}`}>
+                            {dueWords.length} kelime tekrar zamanı geldi!
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Hemen tekrar etmelisiniz
+                          </p>
+                        </div>
                       </div>
-                    )}
+                    ) : null}
+                    
+                    {upcomingWords.length > 0 ? (
+                      <div className="flex items-start">
+                        <div className={`p-1.5 rounded-full ${colorClass.light} ${colorClass.text} mr-2 mt-0.5`}>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="10"></circle>
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-700">
+                            {upcomingWords.length} kelime beklemede
+                          </p>
+                          {upcomingWords.length > 0 && (
+                            <p className="text-xs text-gray-500">
+                              En yakın: {new Date(Math.min(...upcomingWords.map(w => w.nextReview.getTime()))).toLocaleDateString('tr-TR')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                     
                     {words.length === 0 && (
-                      <p className="text-sm text-gray-500">
-                        Henüz kelime eklenmemiş
-                      </p>
+                      <div className="flex items-center justify-center h-16">
+                        <p className="text-sm text-gray-500">
+                          Henüz kelime eklenmemiş
+                        </p>
+                      </div>
                     )}
                   </div>
                 );
               })}
             </div>
+            
+            <div className="mt-6 pt-4 border-t border-gray-100">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center text-sm text-gray-600">
+                  <Clock className="w-4 h-4 mr-1.5 text-gray-500" />
+                  <span>Son güncelleme: {new Date().toLocaleDateString('tr-TR')}</span>
+                </div>
+                
+                {wordLearningStatus.some(status => new Date(status.nextReview) <= new Date()) && (
+                  <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium">
+                    Tüm Tekrarları Başlat
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Kelime grupları listesi */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredWordGroups.map((group) => (
-              <div 
-                key={group.id}
-                onClick={() => {
-                  setSelectedWordGroup(group.id);
-                  fetchGroupWords(group.id);
-                }}
-                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 border border-slate-100 cursor-pointer"
-              >
-                <div className="p-4">
-                  <h3 className="text-lg font-medium text-slate-800">{group.title}</h3>
-                  <p className="text-slate-600 text-sm mt-1">{group.description}</p>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-sm text-slate-500">{group.wordCount} Kelime</span>
-                    <button className="text-sm px-3 py-1.5 rounded-md bg-slate-700 text-white hover:bg-slate-800 transition-colors">
-                      Başla
-                    </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredWordGroups.map((group) => {
+              // Seviyeye göre renk sınıfları
+              const colorClasses = {
+                beginner: {
+                  card: "border-l-4 border-emerald-400 bg-gradient-to-br from-white to-emerald-50",
+                  badge: "bg-emerald-100 text-emerald-700",
+                  button: "bg-emerald-500 hover:bg-emerald-600"
+                },
+                intermediate: {
+                  card: "border-l-4 border-blue-400 bg-gradient-to-br from-white to-blue-50",
+                  badge: "bg-blue-100 text-blue-700",
+                  button: "bg-blue-500 hover:bg-blue-600"
+                },
+                advanced: {
+                  card: "border-l-4 border-violet-400 bg-gradient-to-br from-white to-violet-50",
+                  badge: "bg-violet-100 text-violet-700",
+                  button: "bg-violet-500 hover:bg-violet-600"
+                }
+              };
+              
+              // Kategori renk sınıfları
+              const categoryColors = {
+                daily: "bg-amber-100 text-amber-700",
+                business: "bg-sky-100 text-sky-700",
+                travel: "bg-lime-100 text-lime-700",
+                academic: "bg-pink-100 text-pink-700"
+              };
+              
+              // Mevcut seviye için renk sınıflarını al
+              const colors = colorClasses[group.level as keyof typeof colorClasses] || colorClasses.intermediate;
+              const categoryColor = categoryColors[group.category as keyof typeof categoryColors] || "bg-gray-100 text-gray-700";
+              
+              return (
+                <div 
+                  key={group.id}
+                  onClick={() => {
+                    setSelectedWordGroup(group.id);
+                    fetchGroupWords(group.id);
+                  }}
+                  className={`rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 cursor-pointer ${colors.card}`}
+                >
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-semibold text-gray-800">{group.title}</h3>
+                      <span className="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700">
+                        {group.wordCount} Kelime
+                      </span>
+                    </div>
+                    <p className="text-gray-600 mb-4">{group.description}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors.badge}`}>
+                          {group.level === 'beginner' ? 'Başlangıç' : 
+                          group.level === 'intermediate' ? 'Orta' : 
+                          group.level === 'advanced' ? 'İleri' : group.level}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${categoryColor}`}>
+                          {group.category === 'daily' ? 'Günlük Konuşma' : 
+                          group.category === 'business' ? 'İş İngilizcesi' : 
+                          group.category === 'travel' ? 'Seyahat' : 
+                          group.category === 'academic' ? 'Akademik' : group.category}
+                        </span>
+                      </div>
+                      <button className={`px-4 py-2 rounded-lg text-white transition-colors ${colors.button}`}>
+                        Başla
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       );
