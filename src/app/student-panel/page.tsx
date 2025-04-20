@@ -3,13 +3,11 @@
 import { useState, useEffect } from 'react';
 import { auth, db } from '@/lib/firebase/config';
 import { useRouter } from 'next/navigation';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, limit, setDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit, setDoc, Timestamp, doc } from 'firebase/firestore';
 import Image from 'next/image';
-import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut, BookOpen } from 'lucide-react';
+import { Menu, X, Home, MessageCircle, Users, FileText, User, BarChart, Clock, Settings, LogOut, BookOpen} from 'lucide-react';
 import { useLanguage } from '@/lib/context/LanguageContext';
-import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { useAuthState } from 'react-firebase-hooks/auth';
-import { Word as WordType } from '@/types/word';
 
 // Kelime Grubu tipi tanımlaması
 interface WordGroup {
@@ -41,16 +39,46 @@ interface Word {
   imageUrl?: string;
 }
 
+// Kullanıcı profili interface'i
+interface UserProfile {
+  displayName?: string;
+  email?: string;
+  photoURL?: string;
+  role?: string;
+  createdAt?: { seconds: number };
+  englishLevel?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+// Kurs interface'i
+interface Course {
+  id: string;
+  title?: string;
+  description?: string;
+  instructorName?: string;
+  level?: string;
+  topic?: string;
+}
+
+// Ödev interface'i
+interface Assignment {
+  id: string;
+  title?: string;
+  description?: string;
+  dueDate?: { seconds: number };
+  status?: string;
+}
+
 export default function StudentPanel() {
   const { t } = useLanguage();
   const router = useRouter();
   
   // Temel state'ler
-  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [activeCourses, setActiveCourses] = useState<any[]>([]);
-  const [pendingAssignments, setPendingAssignments] = useState<any[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [activeCourses, setActiveCourses] = useState<Course[]>([]);
+  const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -59,8 +87,6 @@ export default function StudentPanel() {
   const [selectedWordGroup, setSelectedWordGroup] = useState<string | null>(null);
   const [groupWords, setGroupWords] = useState<Array<Word & { imageUrl: string }>>([]);
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [wordLearningStatus, setWordLearningStatus] = useState<WordLearningStatus[]>([]);
   
   // Kelime grupları için state'ler
@@ -71,6 +97,8 @@ export default function StudentPanel() {
   const [searchFilter, setSearchFilter] = useState('');
   
   const [authUser] = useAuthState(auth);
+  
+  const [isSpeaking, setIsSpeaking] = useState(false);
   
   // Kelime öğrenme durumlarını yükle
   useEffect(() => {
@@ -119,8 +147,7 @@ export default function StudentPanel() {
       try {
         const unsubscribe = auth.onAuthStateChanged(async (user) => {
           if (user) {
-            setUser(user);
-            await fetchUserProfile(user.uid);
+            setUserProfile(user.toJSON());
             // Kelime gruplarını getir
             await fetchWordGroups();
           } else {
@@ -206,43 +233,6 @@ export default function StudentPanel() {
     setSearchFilter(search);
   };
   
-  // Kelime grubuna basıldığında rota değişikliği
-  const handleWordGroupClick = (groupId: string) => {
-    router.push(`/vocabulary/${groupId}`);
-  };
-  
-  // Kullanıcı profilini getir
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', userId));
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        setUserProfile(userData);
-        
-        // Kullanıcı öğrenci değilse yönlendir
-        if (userData.role !== 'student') {
-          if (userData.role === 'admin') {
-            router.push('/dashboard');
-          } else if (userData.role === 'teacher') {
-            router.push('/teacher-panel');
-          } else {
-            router.push('/');
-          }
-          return;
-        }
-        
-        // Kurslar ve ödevleri getir
-        await fetchStudentData(userId);
-      } else {
-        setError('Kullanıcı profili bulunamadı.');
-      }
-    } catch (err) {
-      console.error('Profil verisi alınamadı:', err);
-      setError('Profil bilgileri alınırken bir hata oluştu.');
-    }
-  };
-  
   // Öğrenci verilerini getir (kurslar, ödevler)
   const fetchStudentData = async (userId: string) => {
     try {
@@ -254,7 +244,7 @@ export default function StudentPanel() {
       );
       
       const coursesSnapshot = await getDocs(coursesQuery);
-      const coursesData: any[] = [];
+      const coursesData: Course[] = [];
       
       coursesSnapshot.forEach((doc) => {
         coursesData.push({
@@ -275,7 +265,7 @@ export default function StudentPanel() {
       );
       
       const assignmentsSnapshot = await getDocs(assignmentsQuery);
-      const assignmentsData: any[] = [];
+      const assignmentsData: Assignment[] = [];
       
       assignmentsSnapshot.forEach((doc) => {
         assignmentsData.push({
@@ -294,13 +284,124 @@ export default function StudentPanel() {
 
   const handleLogout = async () => {
     try {
+      // Önce tüm Firebase işlemlerini temizle
+      window.speechSynthesis.cancel(); // Varsa ses çalmayı durdur
+      
+      // Çıkış işlemini gerçekleştir
       await auth.signOut();
-      router.push('/login');
+      
+      // Sayfayı yönlendir
+      window.location.href = '/login';
     } catch (error) {
       console.error('Çıkış yapılırken hata:', error);
     }
   };
   
+  // Component başlangıcında speechSynthesis'i hazırla
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      const synth = window.speechSynthesis;
+      
+      // API'yi hazırla
+      const prepareSynthesis = () => {
+        // Boş bir utterance oluştur ve çal
+        const utterance = new SpeechSynthesisUtterance('');
+        utterance.lang = 'en-US';
+        synth.speak(utterance);
+        synth.cancel(); // Hemen iptal et
+      };
+
+      // Sayfa yüklendiğinde hazırla
+      if (synth.getVoices().length > 0) {
+        prepareSynthesis();
+      } else {
+        // Sesler yüklenene kadar bekle
+        synth.onvoiceschanged = prepareSynthesis;
+      }
+    }
+  }, []);
+
+  const speakWord = (text: string, lang: string = 'en-US') => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = 0.8;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+      };
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+      };
+      
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+      };
+      
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // updateWordLearningStatus fonksiyonunu ekle
+  const updateWordLearningStatus = async (wordId: string, difficulty: 'easy' | 'medium' | 'hard') => {
+    if (!authUser?.uid) {
+      console.error('Kullanıcı girişi yapılmamış');
+      return;
+    }
+
+    // Eğer kelime zaten kaydedilmişse, güncelle
+    const existingStatus = wordLearningStatus.find(status => status.wordId === wordId);
+    if (existingStatus) {
+      console.log('Bu kelime zaten kaydedilmiş');
+      return;
+    }
+
+    const now = new Date();
+    const nextReviewDate = new Date();
+    
+    switch(difficulty) {
+      case 'hard':
+        nextReviewDate.setDate(now.getDate() + 1);
+        break;
+      case 'medium':
+        nextReviewDate.setDate(now.getDate() + 3);
+        break;
+      case 'easy':
+        nextReviewDate.setDate(now.getDate() + 7);
+        break;
+    }
+
+    try {
+      const wordRef = doc(db, 'wordLearningStatus', `${authUser.uid}_${wordId}`);
+      await setDoc(wordRef, {
+        userId: authUser.uid,
+        wordId,
+        difficulty,
+        lastReviewed: Timestamp.fromDate(now),
+        nextReview: Timestamp.fromDate(nextReviewDate),
+        reviewCount: 1,
+        createdAt: Timestamp.fromDate(now)
+      }, { merge: true });
+
+      setWordLearningStatus(prev => [...prev, {
+        wordId,
+        lastReviewed: now,
+        nextReview: nextReviewDate,
+        difficulty,
+        reviewCount: 1
+      }]);
+
+      console.log(`Kelime "${difficulty === 'hard' ? 'Zor' : difficulty === 'medium' ? 'Orta' : 'Kolay'}" olarak işaretlendi.`);
+    } catch (error) {
+      console.error('Kelime durumu güncellenirken hata oluştu:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -354,7 +455,6 @@ export default function StudentPanel() {
       
       setGroupWords(words);
       setCurrentWordIndex(0);
-      setIsFlipped(false);
     } catch (error) {
       console.error('Kelimeler getirilirken hata oluştu:', error);
       setError('Kelimeler yüklenirken bir hata oluştu.');
@@ -370,69 +470,10 @@ export default function StudentPanel() {
     isLast: boolean
   }) => {
     const [isFlipped, setIsFlipped] = useState(false);
-    const [wordLearningStatus, setWordLearningStatus] = useState<WordLearningStatus[]>([]);
+    const [selectedDifficulty, setSelectedDifficulty] = useState<'easy' | 'medium' | 'hard' | null>(null);
 
-    const speakWord = async () => {
-      if (isSpeaking) return;
-      setIsSpeaking(true);
-      try {
-        const utterance = new SpeechSynthesisUtterance(word.english);
-        utterance.lang = 'en-US';
-        window.speechSynthesis.speak(utterance);
-        await new Promise(resolve => {
-          utterance.onend = resolve;
-        });
-      } finally {
-        setIsSpeaking(false);
-      }
-    };
-
-    const updateWordLearningStatus = async (wordId: string, difficulty: 'easy' | 'medium' | 'hard') => {
-      if (!authUser?.uid) {
-        console.error('Kullanıcı girişi yapılmamış');
-        return;
-      }
-
-      const now = new Date();
-      const nextReviewDate = new Date();
-      
-      switch(difficulty) {
-        case 'hard':
-          nextReviewDate.setDate(now.getDate() + 1);
-          break;
-        case 'medium':
-          nextReviewDate.setDate(now.getDate() + 3);
-          break;
-        case 'easy':
-          nextReviewDate.setDate(now.getDate() + 7);
-          break;
-      }
-
-      try {
-        const wordRef = doc(db, 'wordLearningStatus', `${authUser.uid}_${wordId}`);
-        await setDoc(wordRef, {
-          userId: authUser.uid,
-          wordId,
-          difficulty,
-          lastReviewed: Timestamp.fromDate(now),
-          nextReview: Timestamp.fromDate(nextReviewDate),
-          reviewCount: 1,
-          createdAt: Timestamp.fromDate(now)
-        }, { merge: true });
-
-        setWordLearningStatus(prev => [...prev, {
-          wordId,
-          lastReviewed: now,
-          nextReview: nextReviewDate,
-          difficulty,
-          reviewCount: 1
-        }]);
-
-        console.log(`Kelime "${difficulty === 'hard' ? 'Zor' : difficulty === 'medium' ? 'Orta' : 'Kolay'}" olarak işaretlendi.`);
-      } catch (error) {
-        console.error('Kelime durumu güncellenirken hata oluştu:', error);
-      }
-    };
+    // Mevcut kelime için öğrenme durumunu kontrol et
+    const currentWordStatus = wordLearningStatus.find(status => status.wordId === word.id);
 
     return (
       <div className="w-full max-w-2xl mx-auto p-4">
@@ -456,7 +497,26 @@ export default function StudentPanel() {
               <div className="w-full h-full bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
                 <div className="p-8 h-full flex flex-col justify-center items-center">
                   <div className="text-center">
-                    <h2 className="text-3xl font-bold text-gray-800 mb-4">{word.english}</h2>
+                    <div className="flex items-center justify-center gap-4 mb-4">
+                      <h2 className="text-4xl font-bold text-gray-800">{word.english}</h2>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          speakWord(word.english);
+                        }}
+                        className="p-3 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all transform hover:scale-110 flex items-center justify-center"
+                        title="Seslendir"
+                      >
+                        {isSpeaking ? (
+                          <div className="w-8 h-8 border-2 border-blue-800 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                     {word.pronunciation && (
                       <p className="text-xl text-gray-600 italic mb-6">
                         /{word.pronunciation}/
@@ -510,27 +570,42 @@ export default function StudentPanel() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        setSelectedDifficulty('hard');
                         updateWordLearningStatus(word.id, 'hard');
                       }}
-                      className="px-6 py-3 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all transform hover:scale-105"
+                      className={`px-6 py-3 rounded-lg ${
+                        selectedDifficulty === 'hard' 
+                          ? 'bg-red-600 text-white' 
+                          : 'bg-red-100 text-red-800 hover:bg-red-200'
+                      } focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all transform hover:scale-105`}
                     >
                       Zor
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        setSelectedDifficulty('medium');
                         updateWordLearningStatus(word.id, 'medium');
                       }}
-                      className="px-6 py-3 bg-yellow-100 text-yellow-800 rounded-lg hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-all transform hover:scale-105"
+                      className={`px-6 py-3 rounded-lg ${
+                        selectedDifficulty === 'medium' 
+                          ? 'bg-yellow-600 text-white' 
+                          : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                      } focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-all transform hover:scale-105`}
                     >
                       Orta
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        setSelectedDifficulty('easy');
                         updateWordLearningStatus(word.id, 'easy');
                       }}
-                      className="px-6 py-3 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all transform hover:scale-105"
+                      className={`px-6 py-3 rounded-lg ${
+                        selectedDifficulty === 'easy' 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-green-100 text-green-800 hover:bg-green-200'
+                      } focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all transform hover:scale-105`}
                     >
                       Kolay
                     </button>
@@ -563,20 +638,20 @@ export default function StudentPanel() {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const currentWordStatus = wordLearningStatus.find(status => status.wordId === word.id);
-              if (!currentWordStatus) {
-                console.log('Lütfen önce zorluk seviyesini seçin');
+              if (!selectedDifficulty) {
+                alert('Lütfen önce zorluk seviyesini seçin');
                 return;
               }
               onNext();
               setIsFlipped(false);
+              setSelectedDifficulty(null);
             }}
             className={`px-4 py-2 rounded ${
-              !wordLearningStatus.find(status => status.wordId === word.id)
+              !selectedDifficulty
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
-            disabled={!wordLearningStatus.find(status => status.wordId === word.id)}
+            disabled={!selectedDifficulty}
           >
             {isLast ? 'Bitir' : 'Sonraki'}
           </button>
@@ -702,7 +777,6 @@ export default function StudentPanel() {
                     setSelectedWordGroup(null);
                     setGroupWords([]);
                     setCurrentWordIndex(0);
-                    setIsFlipped(false);
                   }}
                   className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all"
                 >
@@ -976,7 +1050,7 @@ export default function StudentPanel() {
                           <h3 className="text-lg font-medium text-slate-800">{assignment.title}</h3>
                           <p className="text-slate-600 text-sm mt-1">{assignment.description}</p>
                           <div className="mt-2 flex items-center text-sm text-slate-500">
-                            <span>Son Teslim: {new Date(assignment.dueDate.seconds * 1000).toLocaleDateString('tr-TR')}</span>
+                            <span>Son Teslim: {assignment.dueDate && assignment.dueDate.seconds ? new Date(assignment.dueDate.seconds * 1000).toLocaleDateString('tr-TR') : 'Belirtilmemiş'}</span>
                           </div>
                         </div>
                         <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">Beklemede</span>
@@ -1111,7 +1185,7 @@ export default function StudentPanel() {
                         
                         {searchFilter && (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                            "{searchFilter}"
+                            &quot;{searchFilter}&quot;
                             <button 
                               onClick={() => {
                                 setSearchFilter('');
@@ -1337,46 +1411,30 @@ export default function StudentPanel() {
                   }
                 `}
               >
-                <span className="mr-2.5 opacity-75">{item.icon}</span>
-                {item.label}
+                {item.icon}
+                <span className="ml-3">{item.label}</span>
               </button>
             ))}
           </nav>
         </div>
-        
-        {/* Dil değiştirici ve çıkış butonu */}
-        <div className="p-3 border-t border-slate-200">
-          <div className="mb-3">
-            <LanguageSwitcher variant="select" className="w-full" />
-          </div>
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50 transition-colors"
+        <div className="p-3 border-t">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              handleLogout();
+            }}
+            className="w-full flex items-center px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50 transition-colors"
           >
-            <LogOut size={16} className="mr-2 opacity-75" />
-            {t('logout')}
+            <LogOut size={18} />
+            <span className="ml-3">Çıkış Yap</span>
           </button>
         </div>
       </div>
       
-      {/* Yarı saydam overlay (sadece mobil için) */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 z-30 bg-slate-900 bg-opacity-20 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-      
       {/* Ana içerik alanı */}
-      <div className="flex-1 p-4 md:p-6 md:pt-6 overflow-auto">
-        <div className="hidden md:flex md:justify-between md:items-center mb-6">
-          <h1 className="text-xl font-semibold text-slate-800">
-            {menuItems.find(item => item.id === activeTab)?.label || t('appName')}
-          </h1>
-        </div>
-        
+      <div className="flex-1 p-4 md:p-6">
         {renderContent()}
       </div>
     </div>
   );
-} 
+}

@@ -7,7 +7,7 @@ import { rbacService } from '@/lib/auth/rbac';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
-import { Home, Users, Book, Settings, LogOut, BookOpen, PlusCircle, Image, GraduationCap } from 'lucide-react';
+import { Home, Users, Book, Settings, LogOut, BookOpen, PlusCircle, Image, GraduationCap, Volume2 } from 'lucide-react';
 import { collection, addDoc, getDocs, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, setDoc, where } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import styles from './styles.module.css';
@@ -1392,8 +1392,8 @@ export default function Dashboard() {
                                     className="w-full h-full object-cover"
                                   />
                                 </div>
-                                <div className="flex items-center gap-3 mb-4">
-                                  <h2 className="text-4xl font-bold text-gray-800 hover:text-blue-600 transition-colors duration-300">
+                                <div className="flex items-center gap-4 mb-4">
+                                  <h2 className="text-3xl font-bold text-gray-800">
                                     {groupWords[currentWordIndex].english}
                                   </h2>
                                   <button
@@ -1401,18 +1401,13 @@ export default function Dashboard() {
                                       e.stopPropagation();
                                       speakWord(groupWords[currentWordIndex].english);
                                     }}
-                                    className="p-2 text-blue-600 hover:text-blue-800 focus:outline-none transform hover:scale-110 transition-transform duration-300"
-                                    disabled={isSpeaking}
+                                    className="p-3 rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all transform hover:scale-110"
+                                    title="Seslendir"
                                   >
                                     {isSpeaking ? (
-                                      <svg className="w-8 h-8 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                      </svg>
+                                      <div className="w-8 h-8 border-2 border-blue-800 border-t-transparent rounded-full animate-spin" />
                                     ) : (
-                                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                                      </svg>
+                                      <Volume2 size={32} />
                                     )}
                                   </button>
                                 </div>
